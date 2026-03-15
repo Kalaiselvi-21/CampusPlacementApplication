@@ -1,0 +1,168 @@
+Department :- Computer Science Engineering
+
+Name,Department,Company,Package (In LPA)
+Aarav Sharma,Computer Science Engineering,TCS,4.5
+Vivaan Kumar,Computer Science Engineering,Infosys,5.2
+Aditya Singh,Computer Science Engineering,Wipro,4.8
+Vihaan Gupta,Computer Science Engineering,Google,25.0
+Arjun Patel,Computer Science Engineering,Microsoft,22.5
+Reyansh Yadav,Computer Science Engineering,Amazon,18.7
+Ayaan Reddy,Computer Science Engineering,TCS,4.5
+Krishna Joshi,Computer Science Engineering,Cognizant,6.2
+Ishaan Verma,Computer Science Engineering,Accenture,5.5
+Darsh Agarwal,Computer Science Engineering,IBM,12.3
+Gyan Kapoor,Computer Science Engineering,Oracle,14.2
+Kiaan Mishra,Computer Science Engineering,Flipkart,16.8
+Riaan Sharma,Computer Science Engineering,Adobe,19.5
+Veer Nair,Computer Science Engineering,Paytm,8.9
+Aadhya Kumari,Computer Science Engineering,Zomato,7.2
+Anika Patel,Computer Science Engineering,Swiggy,6.8
+Kavya Singh,Computer Science Engineering,Ola,9.1
+Anaya Gupta,Computer Science Engineering,Uber,10.5
+Ira Sharma,Computer Science Engineering,Netflix,21.2
+Myra Reddy,Computer Science Engineering,Spotify,18.9
+Saanvi Joshi,Computer Science Engineering,Facebook,26.5
+Aanya Verma,Computer Science Engineering,Apple,28.0
+Pari Agarwal,Computer Science Engineering,,0
+Avni Kapoor,Computer Science Engineering,,0
+Riya Mishra,Computer Science Engineering,,0
+
+Department :- Information Technology
+
+Name,Department,Company,Package (In LPA)
+Advait Sharma,Information Technology,TCS,4.2
+Aryan Kumar,Information Technology,Infosys,4.8
+Shaurya Singh,Information Technology,Wipro,4.5
+Atharv Gupta,Information Technology,HCL,5.1
+Arnav Patel,Information Technology,Tech Mahindra,5.8
+Vivaan Yadav,Information Technology,L&T Infotech,6.5
+Aarav Reddy,Information Technology,Capgemini,6.2
+Dhruv Joshi,Information Technology,Deloitte,8.7
+Arjun Verma,Information Technology,EY,9.2
+Kabir Agarwal,Information Technology,PwC,8.9
+Yash Kapoor,Information Technology,KPMG,9.5
+Rudra Mishra,Information Technology,Salesforce,15.6
+Shivansh Sharma,Information Technology,ServiceNow,14.2
+Aarush Nair,Information Technology,VMware,12.8
+Anvi Kumari,Information Technology,Cisco,13.5
+Diya Patel,Information Technology,Intel,16.2
+Kiara Singh,Information Technology,Nvidia,17.8
+Navya Gupta,Information Technology,AMD,15.9
+Rhea Sharma,Information Technology,Qualcomm,14.7
+Tara Reddy,Information Technology,Broadcom,16.5
+Zara Joshi,Information Technology,,0
+Asha Verma,Information Technology,,0
+Meera Agarwal,Information Technology,,0
+Priya Kapoor,Information Technology,,0
+
+Department :- Electronics and Communication Engineering
+
+Name,Department,Company,Package (In LPA)
+Advay Sharma,Electronics and Communication Engineering,Qualcomm,12.5
+Aryan Kumar,Electronics and Communication Engineering,Broadcom,13.2
+Vihaan Singh,Electronics and Communication Engineering,Intel,14.8
+Aarav Gupta,Electronics and Communication Engineering,Nvidia,15.5
+Reyansh Patel,Electronics and Communication Engineering,AMD,13.9
+Ayaan Yadav,Electronics and Communication Engineering,Mediatek,11.7
+Kiaan Reddy,Electronics and Communication Engineering,Samsung,10.8
+Darsh Joshi,Electronics and Communication Engineering,LG Electronics,9.5
+Gyan Verma,Electronics and Communication Engineering,Sony,10.2
+Riaan Agarwal,Electronics and Communication Engineering,Panasonic,8.9
+Veer Kapoor,Electronics and Communication Engineering,Bosch,12.1
+Ishaan Mishra,Electronics and Communication Engineering,Continental,11.3
+Krishna Sharma,Electronics and Communication Engineering,Honeywell,10.7
+Arjun Nair,Electronics and Communication Engineering,Siemens,13.4
+Aarya Kumari,Electronics and Communication Engineering,Texas Instruments,14.2
+Ananya Patel,Electronics and Communication Engineering,Analog Devices,13.8
+Kavya Singh,Electronics and Communication Engineering,Infineon,12.6
+Diya Gupta,Electronics and Communication Engineering,STMicroelectronics,11.9
+Kiara Sharma,Electronics and Communication Engineering,Marvell,12.3
+Navya Reddy,Electronics and Communication Engineering,Micron,13.7
+Rhea Joshi,Electronics and Communication Engineering,,0
+Tara Verma,Electronics and Communication Engineering,,0
+Zara Agarwal,Electronics and Communication Engineering,,0
+
+Department :- Mechanical Engineering
+
+Name,Department,Company,Package (In LPA)
+Advait Sharma,Mechanical Engineering,Tata Motors,8.5
+Aryan Kumar,Mechanical Engineering,Mahindra,7.8
+Shaurya Singh,Mechanical Engineering,Bajaj Auto,7.2
+Atharv Gupta,Mechanical Engineering,Hero MotoCorp,6.9
+Arnav Patel,Mechanical Engineering,Maruti Suzuki,8.1
+Vivaan Yadav,Mechanical Engineering,Hyundai,8.7
+Aarav Reddy,Mechanical Engineering,Ford,9.2
+Dhruv Joshi,Mechanical Engineering,General Motors,9.8
+Arjun Verma,Mechanical Engineering,BMW,12.5
+Kabir Agarwal,Mechanical Engineering,Mercedes-Benz,13.2
+Yash Kapoor,Mechanical Engineering,Audi,12.8
+Rudra Mishra,Mechanical Engineering,Volvo,11.9
+Shivansh Sharma,Mechanical Engineering,JCB,8.9
+Aarush Nair,Mechanical Engineering,Caterpillar,10.5
+Anvi Kumari,Mechanical Engineering,Komatsu,9.7
+Diya Patel,Mechanical Engineering,Hitachi,10.2
+Kiara Singh,Mechanical Engineering,Siemens,11.8
+Navya Gupta,Mechanical Engineering,ABB,11.5
+Rhea Sharma,Mechanical Engineering,Schneider Electric,10.8
+Tara Reddy,Mechanical Engineering,Honeywell,11.2
+Zara Joshi,Mechanical Engineering,,0
+Asha Verma,Mechanical Engineering,,0
+Meera Agarwal,Mechanical Engineering,,0
+Priya Kapoor,Mechanical Engineering,,0
+
+Department :- Electrical Engineering
+
+Name,Department,Company,Package (In LPA)
+Advay Sharma,Electrical Engineering,BHEL,6.8
+Aryan Kumar,Electrical Engineering,NTPC,7.2
+Vihaan Singh,Electrical Engineering,PowerGrid,7.8
+Aarav Gupta,Electrical Engineering,ONGC,8.5
+Reyansh Patel,Electrical Engineering,Indian Oil,7.9
+Ayaan Yadav,Electrical Engineering,BPCL,7.5
+Kiaan Reddy,Electrical Engineering,HPCL,7.3
+Darsh Joshi,Electrical Engineering,Coal India,6.9
+Gyan Verma,Electrical Engineering,Reliance Industries,9.2
+Riaan Agarwal,Electrical Engineering,Adani Power,8.1
+Veer Kapoor,Electrical Engineering,Tata Power,8.7
+Ishaan Mishra,Electrical Engineering,JSW Energy,7.8
+Krishna Sharma,Electrical Engineering,Torrent Power,7.4
+Arjun Nair,Electrical Engineering,CESC,7.1
+Aarya Kumari,Electrical Engineering,Suzlon,6.8
+Ananya Patel,Electrical Engineering,Vestas,8.3
+Kavya Singh,Electrical Engineering,General Electric,10.5
+Diya Gupta,Electrical Engineering,Siemens,9.8
+Kiara Sharma,Electrical Engineering,ABB,9.5
+Navya Reddy,Electrical Engineering,Schneider Electric,9.1
+Rhea Joshi,Electrical Engineering,,0
+Tara Verma,Electrical Engineering,,0
+Zara Agarwal,Electrical Engineering,,0
+Meera Kapoor,Electrical Engineering,,0
+
+Department :- Civil Engineering
+
+Name,Department,Company,Package (In LPA)
+Advait Sharma,Civil Engineering,L&T Construction,6.5
+Aryan Kumar,Civil Engineering,Tata Projects,6.2
+Shaurya Singh,Civil Engineering,Shapoorji Pallonji,5.8
+Atharv Gupta,Civil Engineering,Godrej Properties,6.1
+Arnav Patel,Civil Engineering,DLF,6.4
+Vivaan Yadav,Civil Engineering,Sobha Limited,5.9
+Aarav Reddy,Civil Engineering,Prestige Group,6.3
+Dhruv Joshi,Civil Engineering,Brigade Group,6.0
+Arjun Verma,Civil Engineering,Puravankara,5.7
+Kabir Agarwal,Civil Engineering,Embassy Group,6.6
+Yash Kapoor,Civil Engineering,Mindspace REIT,7.1
+Rudra Mishra,Civil Engineering,Brookfield India,7.8
+Shivansh Sharma,Civil Engineering,Blackstone,8.2
+Aarush Nair,Civil Engineering,GMR Group,6.8
+Anvi Kumari,Civil Engineering,GVK Group,6.5
+Diya Patel,Civil Engineering,IRB Infrastructure,6.2
+Kiara Singh,Civil Engineering,Dilip Buildcon,5.9
+Navya Gupta,Civil Engineering,NCC Limited,6.1
+Rhea Sharma,Civil Engineering,HCC Limited,5.8
+Tara Reddy,Civil Engineering,Simplex Infrastructure,6.0
+Zara Joshi,Civil Engineering,,0
+Asha Verma,Civil Engineering,,0
+Meera Agarwal,Civil Engineering,,0
+Priya Kapoor,Civil Engineering,,0
+Rohan Singh,Civil Engineering,,0

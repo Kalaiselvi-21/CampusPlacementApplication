@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f9fafb;
+  min-height: 100vh;
+  color: #1f2937;
+}
+
+/* White with Lavender Accents */
+.card-white {
+  background-color: white;
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.1);
+}
+
+.card-white-hover {
+  background-color: white;
+  border-radius: 1rem;
+  box-shadow: 0 4px 20px rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.1);
+  transition: all 0.3s ease;
+}
+
+.card-white-hover:hover {
+  box-shadow: 0 8px 30px rgba(167, 139, 250, 0.2);
+  transform: translateY(-2px);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+}
+
+.lavender-gradient {
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+}
+
+.lavender-gradient-light {
+  background: linear-gradient(135deg, #ddd6fe 0%, #c4b5fd 100%);
+}
+
+.lavender-border {
+  border: 1px solid rgba(167, 139, 250, 0.3);
+}
+
+.lavender-shadow {
+  box-shadow: 0 4px 14px rgba(167, 139, 250, 0.15);
+}
+
+.btn-lavender {
+  background-color: #8b5cf6;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-lavender:hover {
+  background-color: #7c3aed;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+}
+
+.btn-lavender-light {
+  background-color: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+  transition: all 0.3s ease;
+}
+
+.btn-lavender-light:hover {
+  background-color: #ddd6fe;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(167, 139, 250, 0.2);
+}
+
+.btn-white {
+  background-color: white;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+  transition: all 0.3s ease;
+}
+
+.btn-white:hover {
+  background-color: #f5f3ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(167, 139, 250, 0.15);
+}
+
+.lavender-text {
+  color: #8b5cf6;
+}
+
+.lavender-bg-light {
+  background-color: #f5f3ff;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f3ff;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ddd6fe;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #c4b5fd;
+}
+
+

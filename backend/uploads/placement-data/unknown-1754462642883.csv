@@ -1,0 +1,29 @@
+Name,Department,Company,Package,Status
+John Doe,Computer Science,Google,12.5 LPA,Placed
+Jane Smith,Computer Science,Microsoft,11.8 LPA,Placed
+Mike Johnson,Computer Science,Amazon,13.2 LPA,Placed
+Sarah Wilson,Computer Science,Apple,14.0 LPA,Placed
+David Brown,Computer Science,Netflix,12.0 LPA,Placed
+Emily Davis,Computer Science,Facebook,13.5 LPA,Placed
+Chris Lee,Computer Science,Twitter,11.5 LPA,Placed
+Lisa Chen,Computer Science,LinkedIn,12.8 LPA,Placed
+Alex Kim,Computer Science,Uber,11.2 LPA,Placed
+Maria Garcia,Computer Science,Airbnb,12.3 LPA,Placed
+Tom Wilson,Computer Science,Not Placed,0,Not Placed
+Anna Johnson,Computer Science,Not Placed,0,Not Placed
+James Miller,Electrical Engineering,Intel,10.5 LPA,Placed
+Emma Taylor,Electrical Engineering,Samsung,9.8 LPA,Placed
+Ryan Anderson,Electrical Engineering,Qualcomm,11.2 LPA,Placed
+Sophie Martin,Electrical Engineering,Broadcom,10.8 LPA,Placed
+Daniel White,Electrical Engineering,AMD,9.5 LPA,Placed
+Olivia Harris,Electrical Engineering,NVIDIA,12.0 LPA,Placed
+Ethan Clark,Electrical Engineering,Not Placed,0,Not Placed
+Zoe Lewis,Electrical Engineering,Not Placed,0,Not Placed
+Noah Walker,Mechanical Engineering,Tesla,9.5 LPA,Placed
+Ava Hall,Mechanical Engineering,Ford,8.8 LPA,Placed
+Liam Allen,Mechanical Engineering,GM,9.2 LPA,Placed
+Isabella Young,Mechanical Engineering,Toyota,8.5 LPA,Placed
+Mason King,Mechanical Engineering,Honda,9.0 LPA,Placed
+Mia Wright,Mechanical Engineering,BMW,10.2 LPA,Placed
+Lucas Scott,Mechanical Engineering,Not Placed,0,Not Placed
+Harper Green,Mechanical Engineering,Not Placed,0,Not Placed 
