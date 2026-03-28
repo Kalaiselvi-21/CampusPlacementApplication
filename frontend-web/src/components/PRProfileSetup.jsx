@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
-import toast from 'react-hot-toast';
-  const API_BASE = process.env.REACT_APP_API_BASE;
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import axios from "axios";
+import toast from "react-hot-toast";
+const API_BASE = process.env.REACT_APP_API_BASE;
 
 const PRProfileSetup = () => {
   const { user, updateUser } = useAuth();
@@ -31,11 +31,14 @@ const PRProfileSetup = () => {
     phoneNumber: "",
     linkedinUrl: "",
     githubUrl: "",
+    resumeDriveLink: "",
+    panCardDriveLink: "",
+    aadharCardDriveLink: "",
     currentBacklogs: 0,
     historyOfBacklogs: [],
     aboutMe: "",
     skills: [],
-    placementStatus: 'unplaced', // Add placement status field
+    placementStatus: "unplaced", // Add placement status field
   });
 
   // Add state for managing backlog history
@@ -43,25 +46,30 @@ const PRProfileSetup = () => {
     subject: "",
     semester: "",
     cleared: false,
-    clearedDate: ""
+    clearedDate: "",
   });
 
   // Function to add backlog to history
   const addBacklogToHistory = () => {
     if (backlogEntry.subject && backlogEntry.semester) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
-        historyOfBacklogs: [...prev.historyOfBacklogs, { ...backlogEntry }]
+        historyOfBacklogs: [...prev.historyOfBacklogs, { ...backlogEntry }],
       }));
-      setBacklogEntry({ subject: "", semester: "", cleared: false, clearedDate: "" });
+      setBacklogEntry({
+        subject: "",
+        semester: "",
+        cleared: false,
+        clearedDate: "",
+      });
     }
   };
 
   // Function to remove backlog from history
   const removeBacklogFromHistory = (index) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      historyOfBacklogs: prev.historyOfBacklogs.filter((_, i) => i !== index)
+      historyOfBacklogs: prev.historyOfBacklogs.filter((_, i) => i !== index),
     }));
   };
 
@@ -73,15 +81,15 @@ const PRProfileSetup = () => {
   });
 
   const departments = [
-    'Computer Science and Engineering',
-    'Information Technology',
-    'Electronics and Communication Engineering',
-    'Electrical and Electronics Engineering',
-    'Mechanical Engineering',
-    'Civil Engineering',
-    'Production Engineering',
-    'Industrial Biotechnology',
-    'Electronic and Instrumentation Engineering',
+    "Computer Science and Engineering",
+    "Information Technology",
+    "Electronics and Communication Engineering",
+    "Electrical and Electronics Engineering",
+    "Mechanical Engineering",
+    "Civil Engineering",
+    "Production Engineering",
+    "Industrial Biotechnology",
+    "Electronic and Instrumentation Engineering",
   ];
 
   const currentYear = new Date().getFullYear();
@@ -89,8 +97,8 @@ const PRProfileSetup = () => {
 
   useEffect(() => {
     // Check if user is PR role
-    if (!user || (user.role !== 'placement_representative')) {
-      navigate('/login');
+    if (!user || user.role !== "placement_representative") {
+      navigate("/login");
       return;
     }
     fetchCompletionStatus();
@@ -102,12 +110,16 @@ const PRProfileSetup = () => {
         `${API_BASE}/api/profile/completion-status`,
         {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        }
+        },
       );
       setCompletionStatus(response.data);
     } catch (error) {
       console.error("Failed to fetch completion status:", error);
-      setCompletionStatus({ percentage: 0, isComplete: false, missingFields: [] });
+      setCompletionStatus({
+        percentage: 0,
+        isComplete: false,
+        missingFields: [],
+      });
     }
   };
 
@@ -116,7 +128,7 @@ const PRProfileSetup = () => {
     if (name === "skills") {
       setFormData((prev) => ({
         ...prev,
-        skills: value
+        skills: value,
       }));
     } else {
       setFormData((prev) => ({ ...prev, [name]: value }));
@@ -137,9 +149,13 @@ const PRProfileSetup = () => {
     try {
       const dataToSend = {
         ...formData,
-        skills: typeof formData.skills === 'string' 
-          ? formData.skills.split(',').map(skill => skill.trim()).filter(skill => skill.length > 0)
-          : formData.skills
+        skills:
+          typeof formData.skills === "string"
+            ? formData.skills
+                .split(",")
+                .map((skill) => skill.trim())
+                .filter((skill) => skill.length > 0)
+            : formData.skills,
       };
 
       const response = await axios.put(
@@ -147,14 +163,15 @@ const PRProfileSetup = () => {
         dataToSend,
         {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        }
+        },
       );
-      
+
       const responseUser = response.data.user;
       const updatedUser = {
         ...user,
         ...(responseUser || {}),
-        placementPolicyConsent: responseUser?.placementPolicyConsent || user.placementPolicyConsent
+        placementPolicyConsent:
+          responseUser?.placementPolicyConsent || user.placementPolicyConsent,
       };
       updateUser(updatedUser);
       toast.success("Basic information saved!");
@@ -162,102 +179,110 @@ const PRProfileSetup = () => {
       setCurrentStep(2);
     } catch (error) {
       console.log("Error response:", error.response?.data);
-    
-    // Handle validation errors from backend
-    if (error.response?.data?.validationErrors) {
-      const errors = error.response.data.validationErrors;
-      setValidationErrors(errors);
-      toast.error(`Invalid: ${errors.join(", ")}`);
-    } else {
-      toast.error(error.response?.data?.message || "Failed to save basic info");
-      setValidationErrors([]);
-    }
+
+      // Handle validation errors from backend
+      if (error.response?.data?.validationErrors) {
+        const errors = error.response.data.validationErrors;
+        setValidationErrors(errors);
+        toast.error(`Invalid: ${errors.join(", ")}`);
+      } else {
+        toast.error(
+          error.response?.data?.message || "Failed to save basic info",
+        );
+        setValidationErrors([]);
+      }
     } finally {
       setLoading(false);
     }
   };
-const [fileValidationErrors, setFileValidationErrors] = useState([]);
+  const [fileValidationErrors, setFileValidationErrors] = useState([]);
   const submitFiles = async () => {
     setLoading(true);
     try {
-           const errors = [];
+      const errors = [];
 
-    // Photo validation - required
-    if (!files.photo) {
-      errors.push("photo");
-    }
+      // Photo validation - required
+      if (!files.photo) {
+        errors.push("photo");
+      }
 
-    // Resume validation - required
-    if (!files.resume) {
-      errors.push("resume");
-    }
+      // Resume validation - required
+      if (!files.resume) {
+        errors.push("resume");
+      }
 
-    // College ID validation - required
-    if (!files.collegeIdCard) {
-      errors.push("collegeIdCard");
-    }
+      // College ID validation - required
+      if (!files.collegeIdCard) {
+        errors.push("collegeIdCard");
+      }
 
-    // Marksheets validation - required, at least 1 file
-    if (!files.marksheets || files.marksheets.length === 0) {
-      errors.push("marksheets");
-    }
+      // Marksheets validation - required, at least 1 file
+      if (!files.marksheets || files.marksheets.length === 0) {
+        errors.push("marksheets");
+      }
 
-    // File size validation (10MB each)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (files.photo && files.photo.size > maxSize) {
-      errors.push("photo_tooLarge");
-    }
-    if (files.resume && files.resume.size > maxSize) {
-      errors.push("resume_tooLarge");
-    }
-    if (files.collegeIdCard && files.collegeIdCard.size > maxSize) {
-      errors.push("collegeIdCard_tooLarge");
-    }
-    if (files.marksheets) {
-      files.marksheets.forEach((file, index) => {
-        if (file.size > maxSize) {
-          errors.push(`marksheets_tooLarge_${index}`);
-        }
-      });
-    }
- // If validation errors exist, show them
-    if (errors.length > 0) {
-      setFileValidationErrors(errors);
-      toast.error(`Please fix: ${errors.join(", ")}`);
-      setLoading(false);
-      return;
-    }
+      // File size validation (10MB each)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (files.photo && files.photo.size > maxSize) {
+        errors.push("photo_tooLarge");
+      }
+      if (files.resume && files.resume.size > maxSize) {
+        errors.push("resume_tooLarge");
+      }
+      if (files.collegeIdCard && files.collegeIdCard.size > maxSize) {
+        errors.push("collegeIdCard_tooLarge");
+      }
+      if (files.marksheets) {
+        files.marksheets.forEach((file, index) => {
+          if (file.size > maxSize) {
+            errors.push(`marksheets_tooLarge_${index}`);
+          }
+        });
+      }
+      // If validation errors exist, show them
+      if (errors.length > 0) {
+        setFileValidationErrors(errors);
+        toast.error(`Please fix: ${errors.join(", ")}`);
+        setLoading(false);
+        return;
+      }
 
       const fileData = new FormData();
 
       if (files.photo) fileData.append("photo", files.photo);
       if (files.resume) fileData.append("resume", files.resume);
-      if (files.collegeIdCard) fileData.append("collegeIdCard", files.collegeIdCard);
+      if (files.collegeIdCard)
+        fileData.append("collegeIdCard", files.collegeIdCard);
 
       files.marksheets.forEach((file) => {
         fileData.append("marksheets", file);
       });
 
       // Upload files if any are selected
-      if (files.photo || files.resume || files.collegeIdCard || files.marksheets.length > 0) {
-        await axios.post(
-          `${API_BASE}/api/profile/upload-files`,
-          fileData,
-          {
-            headers: { 
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-              'Content-Type': 'multipart/form-data'
-            },
-          }
-        );
+      if (
+        files.photo ||
+        files.resume ||
+        files.collegeIdCard ||
+        files.marksheets.length > 0
+      ) {
+        await axios.post(`${API_BASE}/api/profile/upload-files`, fileData, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            "Content-Type": "multipart/form-data",
+          },
+        });
       }
 
       const dataToSend = {
         ...formData,
-        skills: typeof formData.skills === 'string' 
-          ? formData.skills.split(',').map(skill => skill.trim()).filter(skill => skill.length > 0)
-          : formData.skills,
-        isProfileComplete: true
+        skills:
+          typeof formData.skills === "string"
+            ? formData.skills
+                .split(",")
+                .map((skill) => skill.trim())
+                .filter((skill) => skill.length > 0)
+            : formData.skills,
+        isProfileComplete: true,
       };
 
       // Update profile completion status in backend
@@ -266,34 +291,37 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
         dataToSend,
         {
           headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        }
+        },
       );
 
       // Mark profile as complete and update user
       const responseUser = response.data?.user;
-      const updatedUser = responseUser ? {
-        ...user,
-        ...responseUser,
-        placementPolicyConsent: responseUser.placementPolicyConsent || user.placementPolicyConsent
-      } : { 
-        ...user, 
-        isProfileComplete: true,
-        profile: { ...user.profile, isProfileComplete: true }
-      };
+      const updatedUser = responseUser
+        ? {
+            ...user,
+            ...responseUser,
+            placementPolicyConsent:
+              responseUser.placementPolicyConsent ||
+              user.placementPolicyConsent,
+          }
+        : {
+            ...user,
+            isProfileComplete: true,
+            profile: { ...user.profile, isProfileComplete: true },
+          };
       updateUser(updatedUser);
 
       toast.success("Profile completed successfully!");
 
       // Navigate to placement consent for PRs (same as students)
       if (!updatedUser.placementPolicyConsent?.hasAgreed) {
-        console.log('PR Profile completed, navigating to placement consent');
+        console.log("PR Profile completed, navigating to placement consent");
         navigate("/placement-consent", { replace: true });
       } else {
         navigate("/pr-dashboard", { replace: true });
       }
-      
     } catch (error) {
-      console.error('File upload error:', error);
+      console.error("File upload error:", error);
       toast.error(error.response?.data?.message || "Failed to upload files");
     } finally {
       setLoading(false);
@@ -612,9 +640,10 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
         <div>
           <label className="block text-sm font-medium text-gray-700">
             GitHub URL{" "}
-            {["Computer Science and Engineering", "Information Technology"].includes(
-              formData.department
-            )
+            {[
+              "Computer Science and Engineering",
+              "Information Technology",
+            ].includes(formData.department)
               ? "*"
               : "(Optional)"}
           </label>
@@ -626,21 +655,21 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
             placeholder="https://github.com/yourusername"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required={["Computer Science", "Information Technology"].includes(
-              formData.department
+              formData.department,
             )}
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Resume Link *
+            Resume Drive Link *
           </label>
           <input
             type="url"
-            name="resumeLink"
-            value={formData.resumeLink}
+            name="resumeDriveLink"
+            value={formData.resumeDriveLink}
             onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/your-resume"
+            placeholder="https://drive.google.com/file/d/.../view"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />
@@ -648,14 +677,14 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Aadhar Card Link *
+            PAN Card Drive Link *
           </label>
           <input
             type="url"
-            name="aadharLink"
-            value={formData.aadharLink}
+            name="panCardDriveLink"
+            value={formData.panCardDriveLink}
             onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/your-aadhar"
+            placeholder="https://drive.google.com/file/d/.../view"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />
@@ -663,14 +692,14 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            PAN Card Link *
+            Aadhar Card Drive Link *
           </label>
           <input
             type="url"
-            name="panLink"
-            value={formData.panLink}
+            name="aadharCardDriveLink"
+            value={formData.aadharCardDriveLink}
             onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/your-pan"
+            placeholder="https://drive.google.com/file/d/.../view"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />
@@ -706,7 +735,7 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
         />
       </div>
 
-    <div>
+      <div>
         <label className="block text-sm font-medium text-gray-700">
           About Me * (50-500 characters)
         </label>
@@ -726,66 +755,87 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
       </div>
 
       <div className="col-span-2">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            History of Backlogs (Optional)
-          </label>
-          
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              <input
-                type="text"
-                placeholder="Subject"
-                value={backlogEntry.subject}
-                onChange={(e) => setBacklogEntry(prev => ({...prev, subject: e.target.value}))}
-                className="border border-gray-300 rounded-md px-3 py-2"
-              />
-              <input
-                type="text"
-                placeholder="Semester"
-                value={backlogEntry.semester}
-                onChange={(e) => setBacklogEntry(prev => ({...prev, semester: e.target.value}))}
-                className="border border-gray-300 rounded-md px-3 py-2"
-              />
-              <select
-                value={backlogEntry.cleared}
-                onChange={(e) => setBacklogEntry(prev => ({...prev, cleared: e.target.value === 'true'}))}
-                className="border border-gray-300 rounded-md px-3 py-2"
-              >
-                <option value={false}>Not Cleared</option>
-                <option value={true}>Cleared</option>
-              </select>
-              <button
-                type="button"
-                onClick={addBacklogToHistory}
-                className="bg-blue-500 text-white px-3 py-2 rounded-md hover:bg-blue-600"
-              >
-                Add
-              </button>
-            </div>
-            
-            {formData.historyOfBacklogs.length > 0 && (
-              <div className="mt-3">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Added Backlogs:</h4>
-                <div className="space-y-2">
-                  {formData.historyOfBacklogs.map((backlog, index) => (
-                    <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                      <span className="text-sm">
-                        {backlog.subject} - {backlog.semester} ({backlog.cleared ? 'Cleared' : 'Not Cleared'})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeBacklogFromHistory(index)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          History of Backlogs (Optional)
+        </label>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <input
+              type="text"
+              placeholder="Subject"
+              value={backlogEntry.subject}
+              onChange={(e) =>
+                setBacklogEntry((prev) => ({
+                  ...prev,
+                  subject: e.target.value,
+                }))
+              }
+              className="border border-gray-300 rounded-md px-3 py-2"
+            />
+            <input
+              type="text"
+              placeholder="Semester"
+              value={backlogEntry.semester}
+              onChange={(e) =>
+                setBacklogEntry((prev) => ({
+                  ...prev,
+                  semester: e.target.value,
+                }))
+              }
+              className="border border-gray-300 rounded-md px-3 py-2"
+            />
+            <select
+              value={backlogEntry.cleared}
+              onChange={(e) =>
+                setBacklogEntry((prev) => ({
+                  ...prev,
+                  cleared: e.target.value === "true",
+                }))
+              }
+              className="border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value={false}>Not Cleared</option>
+              <option value={true}>Cleared</option>
+            </select>
+            <button
+              type="button"
+              onClick={addBacklogToHistory}
+              className="bg-blue-500 text-white px-3 py-2 rounded-md hover:bg-blue-600"
+            >
+              Add
+            </button>
           </div>
+
+          {formData.historyOfBacklogs.length > 0 && (
+            <div className="mt-3">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">
+                Added Backlogs:
+              </h4>
+              <div className="space-y-2">
+                {formData.historyOfBacklogs.map((backlog, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                  >
+                    <span className="text-sm">
+                      {backlog.subject} - {backlog.semester} (
+                      {backlog.cleared ? "Cleared" : "Not Cleared"})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeBacklogFromHistory(index)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </div>
 
       <button
         onClick={submitBasicInfo}
@@ -894,7 +944,8 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
                   Complete Your Profile
                 </h1>
                 <p className="text-gray-600">
-                  Fill in all required information to access the placement portal
+                  Fill in all required information to access the placement
+                  portal
                 </p>
               </div>
             </div>

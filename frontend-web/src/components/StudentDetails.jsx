@@ -1,700 +1,240 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
-
 const API_BASE = process.env.REACT_APP_API_BASE;
 
-const FIELD_GROUPS = [
-  {
-    title: "Academic",
-    fields: [
-      "department",
-      "degree",
-      "cgpa",
-      "currentBacklogs",
-      "historyOfBacklogs.length",
-      "tenthPercentage",
-      "twelfthPercentage",
-      "diplomaPercentage",
-      "graduationYear",
-    ],
-  },
-  {
-    title: "Placement",
-    fields: ["isPlaced", "currentOffer.company", "currentOffer.ctc"],
-  },
-  {
-    title: "Personal",
-    fields: ["gender", "age"],
-  },
-  {
-    title: "URL Fields",
-    fields: ["resumeURL", "aadharURL", "panURL", "linkedInURL", "githubURL"],
-  },
-];
-
-const FIELD_LABELS = {
-  department: "Department",
-  degree: "Degree",
-  cgpa: "CGPA",
-  currentBacklogs: "Current Backlogs",
-  "historyOfBacklogs.length": "History of Arrears",
-  tenthPercentage: "10th Percentage",
-  twelfthPercentage: "12th Percentage",
-  diplomaPercentage: "Diploma Percentage",
-  graduationYear: "Graduation Year",
-  isPlaced: "Placed Status",
-  "currentOffer.company": "Offer Company",
-  "currentOffer.ctc": "Offer CTC",
-  gender: "Gender",
-  age: "Age",
-  resumeURL: "Resume URL",
-  aadharURL: "Aadhar URL",
-  panURL: "PAN URL",
-  linkedInURL: "LinkedIn URL",
-  githubURL: "GitHub URL",
+const resolveSignatureUrl = (value) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (!API_BASE) return `/uploads/signatures/${trimmed}`;
+  return `${API_BASE.replace(/\/$/, "")}/uploads/signatures/${trimmed}`;
 };
 
-const SORT_FIELDS = [
-  { value: "name", label: "Name" },
-  { value: "cgpa", label: "CGPA" },
-  { value: "graduationYear", label: "Graduation Year" },
-  { value: "currentOfferCtc", label: "Offer CTC" },
-  { value: "department", label: "Department" },
-  { value: "currentBacklogs", label: "Current Backlogs" },
-  { value: "tenthPercentage", label: "10th Percentage" },
-  { value: "twelfthPercentage", label: "12th Percentage" },
-  { value: "resumeURL", label: "Resume Link" },
-  { value: "aadharURL", label: "Aadhar Link" },
-  { value: "panURL", label: "PAN Link" },
-];
-
-const RANGE_FIELD_MAP = {
-  cgpa: "cgpa",
-  currentBacklogs: "currentBacklogs",
-  "historyOfBacklogs.length": "historyOfBacklogsLength",
-  tenthPercentage: "tenthPercentage",
-  twelfthPercentage: "twelfthPercentage",
-  diplomaPercentage: "diplomaPercentage",
-  graduationYear: "graduationYear",
-  "currentOffer.ctc": "currentOfferCtc",
+const resolveUploadUrl = (value) => {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (!API_BASE) return `/uploads/${trimmed}`;
+  return `${API_BASE.replace(/\/$/, "")}/uploads/${trimmed}`;
 };
-
-const FUTURE_URL_FIELDS = [
-  "resumeURL",
-  "aadharURL",
-  "panURL",
-  "linkedInURL",
-  "githubURL",
-];
-
-const FULL_TABLE_COLUMNS = [
-  { key: "sno", header: "S.No", getter: (_, index) => index + 1 },
-  { key: "name", header: "Name", getter: (student) => student.name },
-  {
-    key: "personalEmail",
-    header: "Personal Email",
-    getter: (student) => student.personalEmail,
-  },
-  {
-    key: "collegeEmail",
-    header: "College Email",
-    getter: (student) => student.collegeEmail,
-  },
-  { key: "rollNumber", header: "Roll No", getter: (student) => student.rollNumber },
-  { key: "department", header: "Department", getter: (student) => student.department },
-  { key: "degree", header: "Degree", getter: (student) => student.degree },
-  { key: "graduationYear", header: "Grad Year", getter: (student) => student.graduationYear },
-  { key: "cgpa", header: "CGPA", getter: (student) => student.cgpa },
-  { key: "gender", header: "Gender", getter: (student) => student.gender },
-  {
-    key: "dateOfBirth",
-    header: "DOB",
-    getter: (student) =>
-      student.dateOfBirth && student.dateOfBirth !== "N/A"
-        ? new Date(student.dateOfBirth).toLocaleDateString()
-        : "N/A",
-  },
-  { key: "phoneNumber", header: "Phone", getter: (student) => student.phoneNumber },
-  { key: "address", header: "Address", getter: (student) => student.address },
-  { key: "tenthPercentage", header: "10th %", getter: (student) => student.tenthPercentage },
-  { key: "twelfthPercentage", header: "12th %", getter: (student) => student.twelfthPercentage },
-  { key: "diplomaPercentage", header: "Diploma %", getter: (student) => student.diplomaPercentage },
-  { key: "linkedinUrl", header: "LinkedIn", getter: (student) => student.linkedinUrl },
-  { key: "githubUrl", header: "GitHub", getter: (student) => student.githubUrl },
-  { key: "resumeURL", header: "Resume URL", getter: (student) => student.resumeURL || "N/A" },
-  { key: "aadharURL", header: "Aadhar URL", getter: (student) => student.aadharURL || "N/A" },
-  { key: "panURL", header: "PAN URL", getter: (student) => student.panURL || "N/A" },
-  { key: "currentBacklogs", header: "Backlogs", getter: (student) => student.currentBacklogs },
-  {
-    key: "historyOfBacklogs",
-    header: "Backlog History",
-    getter: (student) =>
-      Array.isArray(student.historyOfBacklogs) && student.historyOfBacklogs.length > 0
-        ? student.historyOfBacklogs.map((b) => `${b.subject}-${b.semester}`).join(", ")
-        : "None",
-  },
-  { key: "aboutMe", header: "About Me", getter: (student) => student.aboutMe },
-  {
-    key: "skills",
-    header: "Skills",
-    getter: (student) =>
-      Array.isArray(student.skills) ? student.skills.join(", ") : student.skills || "N/A",
-  },
-  {
-    key: "placementStatus",
-    header: "Placement Status",
-    getter: (student) => (student.isPlaced ? "Placed" : "Not Placed"),
-  },
-  {
-    key: "consentStatus",
-    header: "Consent Status",
-    getter: (student) => (student.placementConsent?.hasConsented ? "Signed" : "Not Signed"),
-  },
-  {
-    key: "resumeDocument",
-    header: "Resume",
-    getter: (student) => (student.documents?.resume ? "View Resume" : "N/A"),
-  },
-  {
-    key: "idCardDocument",
-    header: "ID Card",
-    getter: (student) =>
-      student.documents?.collegeIdCard ? "View ID Card" : "N/A",
-  },
-  {
-    key: "marksheetDocument",
-    header: "Marksheet",
-    getter: (student) =>
-      Array.isArray(student.documents?.marksheets) &&
-      student.documents.marksheets.length > 0
-        ? "View Marksheet"
-        : "N/A",
-  },
-  {
-    key: "digitalSignature",
-    header: "Digital Signature",
-    getter: (student) => (student.placementConsent?.signature ? "View Signature" : "No Signature"),
-  },
-  {
-    key: "otpVerified",
-    header: "OTP Verified",
-    getter: (student) => (student.otpVerified ? "Verified" : "Not Verified"),
-  },
-  {
-    key: "profileStatus",
-    header: "Profile Status",
-    getter: (student) => (student.profileComplete ? "Complete" : "Incomplete"),
-  },
-  {
-    key: "registeredAt",
-    header: "Registered",
-    getter: (student) =>
-      student.registeredAt ? new Date(student.registeredAt).toLocaleDateString() : "N/A",
-  },
-];
-
-const EXTRA_FILTER_COLUMNS = [
-  { key: "currentOfferCompany", header: "Offer Company", getter: (student) => student.currentOffer?.company || "N/A" },
-  { key: "currentOfferCtc", header: "Offer CTC", getter: (student) => student.currentOffer?.ctc ?? "N/A" },
-  { key: "age", header: "Age", getter: (student) => student.age ?? "N/A" },
-  { key: "linkedInURL", header: "LinkedIn URL", getter: (student) => student.linkedInURL || "N/A" },
-  { key: "githubURL", header: "GitHub URL", getter: (student) => student.githubURL || "N/A" },
-];
-
-const FILTER_FIELD_TO_COLUMN_KEY = {
-  department: "department",
-  degree: "degree",
-  cgpa: "cgpa",
-  currentBacklogs: "currentBacklogs",
-  "historyOfBacklogs.length": "historyOfBacklogs",
-  tenthPercentage: "tenthPercentage",
-  twelfthPercentage: "twelfthPercentage",
-  diplomaPercentage: "diplomaPercentage",
-  graduationYear: "graduationYear",
-  isPlaced: "placementStatus",
-  "currentOffer.company": "currentOfferCompany",
-  "currentOffer.ctc": "currentOfferCtc",
-  gender: "gender",
-  age: "age",
-  resumeURL: "resumeURL",
-  aadharURL: "aadharURL",
-  panURL: "panURL",
-  linkedInURL: "linkedInURL",
-  githubURL: "githubURL",
-};
-
-const ALL_COLUMNS_BY_KEY = [...FULL_TABLE_COLUMNS, ...EXTRA_FILTER_COLUMNS].reduce(
-  (acc, col) => {
-    acc[col.key] = col;
-    return acc;
-  },
-  {}
-);
 
 const StudentDetails = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [students, setStudents] = useState([]);
-  const [meta, setMeta] = useState(null);
+  const [studentsDetails, setStudentsDetails] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [queryLoading, setQueryLoading] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [expandedAboutMe, setExpandedAboutMe] = useState({});
-  const [hasAppliedFilters, setHasAppliedFilters] = useState(false);
-  const [appliedSelectedFields, setAppliedSelectedFields] = useState([]);
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [placementFilter, setPlacementFilter] = useState("all");
+  const [availableDepartments, setAvailableDepartments] = useState([]);
+  const [deletingStudentId, setDeletingStudentId] = useState(null);
 
-  const [selectedFields, setSelectedFields] = useState([
-    "department",
-    "isPlaced",
-    "cgpa",
-  ]);
-  const [conditions, setConditions] = useState({
-    department: [],
-    degree: [],
-    gender: [],
-    currentOfferCompany: [],
-    age: { min: "", max: "" },
-    isPlaced: null,
-    urlChecks: {},
-  });
-  const [sort, setSort] = useState({
-    field: "cgpa",
-    order: "desc",
-  });
-
-  const getFileHref = (fileUrl) => {
-    if (!fileUrl) return null;
-    const value = String(fileUrl).trim();
-    if (!value) return null;
-
-    if (/^https?:\/\//i.test(value)) {
-      return value;
-    }
-
-    if (value.startsWith("/")) {
-      return `${API_BASE}${value}`;
-    }
-
-    return `${API_BASE}/${value}`;
+  const getUniqueDepartments = (students) => {
+    const departments = students
+      .map((student) => student.department)
+      .filter((dept) => dept && dept.trim() !== "")
+      .filter((dept, index, arr) => arr.indexOf(dept) === index)
+      .sort();
+    return departments;
   };
 
-  const getSignatureHref = (signatureUrl) => getFileHref(signatureUrl);
+  const getFilteredStudents = () => {
+    return studentsDetails.filter((student) => {
+      // Department filter
+      const departmentMatch =
+        departmentFilter === "all" || student.department === departmentFilter;
 
-  const rangeState = useMemo(() => {
-    if (!meta?.ranges) return {};
-    const initial = {};
-    Object.keys(meta.ranges).forEach((key) => {
-      initial[key] = {
-        min: meta.ranges[key].min,
-        max: meta.ranges[key].max,
-      };
-    });
-    return initial;
-  }, [meta]);
-
-  const activeTableColumns = useMemo(() => {
-    if (!hasAppliedFilters) {
-      return FULL_TABLE_COLUMNS;
-    }
-
-    const columnKeys = [
-      "sno",
-      "name",
-      "personalEmail",
-      "collegeEmail",
-      "rollNumber",
-    ];
-    appliedSelectedFields.forEach((field) => {
-      const mapped = FILTER_FIELD_TO_COLUMN_KEY[field];
-      if (mapped && !columnKeys.includes(mapped)) {
-        columnKeys.push(mapped);
+      // Placement filter - match the logic used in the table display
+      let placementMatch = true;
+      if (placementFilter === "placed") {
+        placementMatch =
+          student.placementStatus === "placed" || student.isPlaced;
+      } else if (placementFilter === "unplaced") {
+        placementMatch = !(
+          student.placementStatus === "placed" || student.isPlaced
+        );
       }
-    });
 
-    return columnKeys
-      .map((key) => ALL_COLUMNS_BY_KEY[key])
-      .filter(Boolean);
-  }, [hasAppliedFilters, appliedSelectedFields]);
+      return departmentMatch && placementMatch;
+    });
+  };
 
   useEffect(() => {
     if (!user || (user.role !== "po" && user.role !== "placement_officer")) {
       navigate("/login");
       return;
     }
-    loadInitialData();
+    fetchStudentsDetails();
   }, [user, navigate]);
 
-  const loadInitialData = async () => {
+  const fetchStudentsDetails = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const [metaResponse, studentsResponse] = await Promise.all([
-        axios.get(`${API_BASE}/api/users/students-details/meta`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get(`${API_BASE}/api/users/students-details`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
+      console.log("Fetching students details...");
 
-      setMeta(metaResponse.data);
-      setStudents(studentsResponse.data.students || []);
+      const response = await axios.get(
+        `${API_BASE}/api/users/students-details`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
+      console.log("Students response:", response.data);
+      const students = response.data.students || [];
+      setStudentsDetails(students);
+      setAvailableDepartments(getUniqueDepartments(students));
+
+      if (students?.length > 0) {
+        console.log("Sample student data:", students[0]);
+      }
     } catch (error) {
-      console.error("Failed to load student details:", error);
-      toast.error("Failed to load student details");
+      console.error("Error fetching students details:", error);
+      toast.error("Failed to fetch students details");
     } finally {
       setLoading(false);
     }
   };
 
-  const updateRangeCondition = (field, key, value) => {
-    const mappedKey = RANGE_FIELD_MAP[field];
-    if (!mappedKey) return;
-    setConditions((prev) => ({
-      ...prev,
-      [mappedKey]: {
-        ...(prev[mappedKey] || { ...rangeState[mappedKey] }),
-        [key]: value === "" ? "" : Number(value),
-      },
-    }));
-  };
-
-  const toggleFieldSelection = (field) => {
-    setSelectedFields((prev) =>
-      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
-    );
-  };
-
-  const toggleMultiSelectValue = (conditionKey, value) => {
-    setConditions((prev) => {
-      const currentValues = prev[conditionKey] || [];
-      const nextValues = currentValues.includes(value)
-        ? currentValues.filter((v) => v !== value)
-        : [...currentValues, value];
-      return { ...prev, [conditionKey]: nextValues };
-    });
-  };
-
-  const applyFilters = async () => {
-    setQueryLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      const payload = {
-        selectedFields,
-        conditions,
-        sort,
-      };
-
-      const response = await axios.post(
-        `${API_BASE}/api/users/students-details/query`,
-        payload,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      setStudents(response.data.students || []);
-      setHasAppliedFilters(true);
-      setAppliedSelectedFields([...selectedFields]);
-      setDrawerOpen(false);
-    } catch (error) {
-      console.error("Failed to query students:", error);
-      toast.error("Failed to apply filters");
-    } finally {
-      setQueryLoading(false);
-    }
-  };
-
-  const clearFilters = async () => {
-    setSelectedFields(["department", "isPlaced", "cgpa"]);
-    setConditions({
-      department: [],
-      degree: [],
-      gender: [],
-      currentOfferCompany: [],
-      age: { min: "", max: "" },
-      isPlaced: null,
-      urlChecks: {},
-    });
-    setSort({ field: "cgpa", order: "desc" });
-    setHasAppliedFilters(false);
-    setAppliedSelectedFields([]);
-    await loadInitialData();
-  };
-
-  const toggleAboutMe = (studentId) => {
-    setExpandedAboutMe((prev) => ({
-      ...prev,
-      [studentId]: !prev[studentId],
-    }));
-  };
-
-  const getDepartmentOptions = () => {
-    return (meta?.options?.department || []).filter(
-      (dept) => String(dept || "").trim().toLowerCase() !== "cse"
-    );
-  };
-
-  const buildMultiSelectControl = (field, options, conditionKey) => (
-    <div className="space-y-2">
-      <h4 className="font-semibold text-sm">{FIELD_LABELS[field]}</h4>
-      <div className="max-h-40 overflow-y-auto border rounded-lg p-2 space-y-2">
-        {options.length === 0 ? (
-          <p className="text-xs text-gray-500">No options found</p>
-        ) : (
-          options.map((option) => (
-            <label key={option} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={(conditions[conditionKey] || []).includes(option)}
-                onChange={() => toggleMultiSelectValue(conditionKey, option)}
-              />
-              {option}
-            </label>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const buildRangeControl = (field) => {
-    const mappedKey = RANGE_FIELD_MAP[field];
-    const range = meta?.ranges?.[mappedKey];
-    if (!mappedKey || !range) return null;
-    const selected = conditions[mappedKey] || range;
-
-    return (
-      <div className="space-y-2">
-        <h4 className="font-semibold text-sm">{FIELD_LABELS[field]}</h4>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs text-gray-500">Min</label>
-            <input
-              type="number"
-              step={range.step}
-              min={range.min}
-              max={range.max}
-              value={selected.min ?? ""}
-              onChange={(e) => updateRangeCondition(field, "min", e.target.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
-            <input
-              type="range"
-              step={range.step}
-              min={range.min}
-              max={range.max}
-              value={selected.min ?? range.min}
-              onChange={(e) => updateRangeCondition(field, "min", e.target.value)}
-              className="w-full"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">Max</label>
-            <input
-              type="number"
-              step={range.step}
-              min={range.min}
-              max={range.max}
-              value={selected.max ?? ""}
-              onChange={(e) => updateRangeCondition(field, "max", e.target.value)}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
-            <input
-              type="range"
-              step={range.step}
-              min={range.min}
-              max={range.max}
-              value={selected.max ?? range.max}
-              onChange={(e) => updateRangeCondition(field, "max", e.target.value)}
-              className="w-full"
-            />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderConditionControl = (field) => {
-    if (field === "department") {
-      return buildMultiSelectControl(
-        field,
-        getDepartmentOptions(),
-        "department"
-      );
-    }
-    if (field === "degree") {
-      return buildMultiSelectControl(field, meta?.options?.degree || [], "degree");
-    }
-    if (field === "gender") {
-      return buildMultiSelectControl(field, meta?.options?.gender || [], "gender");
-    }
-    if (field === "currentOffer.company") {
-      return buildMultiSelectControl(
-        field,
-        meta?.options?.currentOfferCompany || [],
-        "currentOfferCompany"
-      );
-    }
-    if (field === "isPlaced") {
-      return (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-sm">Placed Status</h4>
-          <div className="flex gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="isPlaced"
-                checked={conditions.isPlaced === null}
-                onChange={() => setConditions((prev) => ({ ...prev, isPlaced: null }))}
-              />
-              All
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="isPlaced"
-                checked={conditions.isPlaced === true}
-                onChange={() => setConditions((prev) => ({ ...prev, isPlaced: true }))}
-              />
-              Yes (Placed)
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="isPlaced"
-                checked={conditions.isPlaced === false}
-                onChange={() => setConditions((prev) => ({ ...prev, isPlaced: false }))}
-              />
-              No (Not Placed)
-            </label>
-          </div>
-        </div>
-      );
-    }
-    if (field === "age") {
-      return (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-sm">Age (Derived from DOB)</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs text-gray-500">From Age</label>
-              <input
-                type="number"
-                min={0}
-                value={conditions.age?.min ?? ""}
-                onChange={(e) =>
-                  setConditions((prev) => ({
-                    ...prev,
-                    age: { ...(prev.age || {}), min: e.target.value },
-                  }))
-                }
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">To Age</label>
-              <input
-                type="number"
-                min={0}
-                value={conditions.age?.max ?? ""}
-                onChange={(e) =>
-                  setConditions((prev) => ({
-                    ...prev,
-                    age: { ...(prev.age || {}), max: e.target.value },
-                  }))
-                }
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (FUTURE_URL_FIELDS.includes(field)) {
-      return (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-sm">{FIELD_LABELS[field]}</h4>
-          <div className="flex gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name={`url-check-${field}`}
-                checked={!conditions.urlChecks?.[field]}
-                onChange={() =>
-                  setConditions((prev) => ({
-                    ...prev,
-                    urlChecks: { ...(prev.urlChecks || {}), [field]: undefined },
-                  }))
-                }
-              />
-              All
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name={`url-check-${field}`}
-                checked={conditions.urlChecks?.[field] === "has"}
-                onChange={() =>
-                  setConditions((prev) => ({
-                    ...prev,
-                    urlChecks: { ...(prev.urlChecks || {}), [field]: "has" },
-                  }))
-                }
-              />
-              Has Link
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name={`url-check-${field}`}
-                checked={conditions.urlChecks?.[field] === "missing"}
-                onChange={() =>
-                  setConditions((prev) => ({
-                    ...prev,
-                    urlChecks: { ...(prev.urlChecks || {}), [field]: "missing" },
-                  }))
-                }
-              />
-              Missing Link
-            </label>
-          </div>
-        </div>
-      );
-    }
-
-    return buildRangeControl(field);
-  };
-
   const downloadStudentsCSV = () => {
-    if (!students.length) {
+    const filteredStudents = getFilteredStudents();
+
+    if (!filteredStudents?.length) {
       toast.error("No student data to download");
       return;
     }
 
-    const headers = activeTableColumns.map((col) => col.header);
-    const rows = students.map((student, index) => [
-      ...activeTableColumns.map((col) => col.getter(student, index)),
-    ]);
+    const headers = [
+      "S.No",
+      "Name",
+      "Roll Number",
+      "Department",
+      "Degree",
+      "Graduation Year",
+      "CGPA",
+      "Gender",
+      "Date of Birth",
+      "Personal Email",
+      "College Email",
+      "Phone Number",
+      "Address",
+      "10th Percentage",
+      "12th Percentage",
+      "Diploma Percentage",
+      "LinkedIn URL",
+      "GitHub URL",
+      "Resume Drive Link",
+      "PAN Card Drive Link",
+      "Aadhar Card Drive Link",
+      "Current Backlogs",
+      "Backlog History",
+      "About Me",
+      "Skills",
+      "Placement Status",
+      "Consent Status",
+      "Profile Complete",
+      "Registered Date",
+      "Last Updated",
+    ];
 
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map((col) => `"${String(col).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csvContent = [
+      headers.join(","),
+      ...filteredStudents.map((student, index) =>
+        [
+          index + 1,
+          `"${student.name}"`,
+          `"${student.rollNumber}"`,
+          `"${student.department}"`,
+          `"${student.degree}"`,
+          `"${student.graduationYear}"`,
+          `"${student.cgpa}"`,
+          `"${student.gender}"`,
+          `"${student.dateOfBirth !== "N/A" ? new Date(student.dateOfBirth).toLocaleDateString() : "N/A"}"`,
+          `"${student.personalEmail}"`,
+          `"${student.collegeEmail}"`,
+          `"${student.phoneNumber}"`,
+          `"${student.address}"`,
+          `"${student.tenthPercentage}"`,
+          `"${student.twelfthPercentage}"`,
+          `"${student.diplomaPercentage}"`,
+          `"${student.linkedinUrl}"`,
+          `"${student.githubUrl}"`,
+          `"${student.resumeDriveLink || "N/A"}"`,
+          `"${student.panCardDriveLink || "N/A"}"`,
+          `"${student.aadharCardDriveLink || "N/A"}"`,
+          `"${student.currentBacklogs}"`,
+          `"${Array.isArray(student.historyOfBacklogs) ? student.historyOfBacklogs.map((b) => `${b.subject}-${b.semester}`).join("; ") : "None"}"`,
+          `"${student.aboutMe}"`,
+          `"${Array.isArray(student.skills) ? student.skills.join("; ") : student.skills}"`,
+          `"${student.placementStatus}"`,
+          `"${student.consentStatus?.hasAgreed ? "Signed" : "Not Signed"}"`,
+          `"${student.profileComplete ? "Complete" : "Incomplete"}"`,
+          `"${student.registeredAt ? new Date(student.registeredAt).toLocaleDateString() : "N/A"}"`,
+          `"${student.lastUpdated ? new Date(student.lastUpdated).toLocaleDateString() : "N/A"}"`,
+        ].join(","),
+      ),
+    ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
+
+    // Include filter info in filename
+    const filterSuffix =
+      departmentFilter !== "all" || placementFilter !== "all"
+        ? `_${departmentFilter !== "all" ? departmentFilter.replace(/\s+/g, "_") : "AllDepts"}_${placementFilter !== "all" ? placementFilter : "AllStatus"}`
+        : "";
+
     link.setAttribute(
       "download",
-      `students_details_filtered_${new Date().toISOString().slice(0, 10)}.csv`
+      `students_details${filterSuffix}_${new Date().toISOString().split("T")[0]}.csv`,
     );
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    toast.success(`Downloaded ${filteredStudents.length} student records`);
+  };
+
+  const handleDeleteStudent = async (student) => {
+    const studentId = student?._id || student?.id;
+    if (!studentId) {
+      toast.error("Invalid student id");
+      return;
+    }
+
+    const studentName = student?.name || "this student";
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${studentName}? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setDeletingStudentId(studentId);
+      const token = localStorage.getItem("token");
+      await axios.delete(`${API_BASE}/api/users/delete/${studentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setStudentsDetails((prev) =>
+        prev.filter((s) => (s._id || s.id) !== studentId),
+      );
+      toast.success("Student deleted successfully");
+    } catch (error) {
+      console.error("Error deleting student:", error);
+      toast.error(error.response?.data?.message || "Failed to delete student");
+    } finally {
+      setDeletingStudentId(null);
+    }
   };
 
   if (loading) {
@@ -710,20 +250,42 @@ const StudentDetails = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-4">
-            <img src="/gct_logo.png" alt="GCT Logo" className="w-16 h-16 object-contain" />
+            <img
+              src="/gct_logo.png"
+              alt="GCT Logo"
+              className="w-16 h-16 object-contain"
+            />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Student Details</h1>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Student Details
+              </h1>
               <p className="text-gray-600 mt-1">
-                Dynamic Filter & Sort ({students.length} students shown)
+                Complete information of all registered students (
+                {getFilteredStudents().length} of {studentsDetails.length}{" "}
+                shown)
               </p>
             </div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex space-x-3">
             <button
               onClick={downloadStudentsCSV}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+              disabled={getFilteredStudents().length === 0}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
             >
-              Download CSV
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              <span>Download CSV ({getFilteredStudents().length})</span>
             </button>
             <button
               onClick={() => navigate("/po-dashboard")}
@@ -734,354 +296,477 @@ const StudentDetails = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-4 mb-6 flex flex-wrap gap-3 items-center">
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="px-4 py-2 border rounded-full bg-gray-100 hover:bg-gray-200 text-sm font-medium"
-          >
-            Filter & Sort
-          </button>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-700">Sort By</label>
-            <select
-              value={sort.field}
-              onChange={(e) => setSort((prev) => ({ ...prev, field: e.target.value }))}
-              className="border rounded px-2 py-1 text-sm"
-            >
-              {SORT_FIELDS.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={sort.order}
-              onChange={(e) => setSort((prev) => ({ ...prev, order: e.target.value }))}
-              className="border rounded px-2 py-1 text-sm"
-            >
-              <option value="asc">Ascending</option>
-              <option value="desc">Descending</option>
-            </select>
-            <button
-              onClick={applyFilters}
-              disabled={queryLoading}
-              className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
-            >
-              {queryLoading ? "Applying..." : "Apply"}
-            </button>
+        {/* Add Filters Section */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">
+                Department:
+              </label>
+              <select
+                value={departmentFilter}
+                onChange={(e) => setDepartmentFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Departments</option>
+                {availableDepartments.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">
+                Placement Status:
+              </label>
+              <select
+                value={placementFilter}
+                onChange={(e) => setPlacementFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">All Students</option>
+                <option value="placed">Placed Only</option>
+                <option value="unplaced">Unplaced Only</option>
+              </select>
+            </div>
+
+            <div className="flex items-center space-x-2 ml-auto">
+              <span className="text-sm text-gray-600">
+                Showing {getFilteredStudents().length} of{" "}
+                {studentsDetails.length} students
+              </span>
+              <button
+                onClick={() => {
+                  setDepartmentFilter("all");
+                  setPlacementFilter("all");
+                }}
+                className="px-3 py-1 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded text-sm"
+              >
+                Clear Filters
+              </button>
+            </div>
           </div>
-          <button
-            onClick={clearFilters}
-            className="ml-auto px-3 py-1.5 text-sm bg-gray-200 hover:bg-gray-300 rounded"
-          >
-            Clear All
-          </button>
         </div>
 
-        <div className="bg-white shadow rounded-lg overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {activeTableColumns.map((column) => (
-                  <th
-                    key={column.key}
-                    className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    {column.header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {students.map((student, index) => (
-                <tr key={student._id} className="hover:bg-gray-50">
-                  {activeTableColumns.map((column) => (
-                    <td key={`${student._id}-${column.key}`} className="px-3 py-3 text-sm">
-                      {column.key === "placementStatus" ? (
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+          {getFilteredStudents().length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500 text-lg">
+                {studentsDetails.length === 0
+                  ? "No students found"
+                  : "No students match the selected filters"}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      S.No
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Name
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Roll No
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Department
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Degree
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Grad Year
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      CGPA
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Gender
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      DOB
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Personal Email
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      College Email
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Phone
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Address
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      10th %
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      12th %
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Diploma %
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      LinkedIn
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      GitHub
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Resume Link
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      PAN Link
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Aadhar Link
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Backlogs
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Backlog History
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      About Me
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Skills
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Placement Status
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Consent Status
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Digital Signature
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Resume
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ID Card
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Marksheets
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      OTP Verified
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Profile Status
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Registered
+                    </th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {getFilteredStudents().map((student, index) => (
+                    <tr key={student._id} className="hover:bg-gray-50">
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {index + 1}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {student.name}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.rollNumber}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.department}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.degree}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.graduationYear}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.cgpa}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.gender}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.dateOfBirth !== "N/A"
+                          ? new Date(student.dateOfBirth).toLocaleDateString()
+                          : "N/A"}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.personalEmail}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.collegeEmail}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.phoneNumber}
+                      </td>
+                      <td
+                        className="px-3 py-4 text-sm text-gray-900 max-w-xs truncate"
+                        title={student.address}
+                      >
+                        {student.address}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.tenthPercentage}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.twelfthPercentage}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.diplomaPercentage}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.linkedinUrl !== "N/A" ? (
+                          <a
+                            href={student.linkedinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.githubUrl !== "N/A" ? (
+                          <a
+                            href={student.githubUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.resumeDriveLink ? (
+                          <a
+                            href={student.resumeDriveLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.panCardDriveLink ? (
+                          <a
+                            href={student.panCardDriveLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.aadharCardDriveLink ? (
+                          <a
+                            href={student.aadharCardDriveLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.currentBacklogs}
+                      </td>
+                      <td className="px-3 py-4 text-sm text-gray-900 max-w-xs">
+                        {Array.isArray(student.historyOfBacklogs) &&
+                        student.historyOfBacklogs.length > 0
+                          ? student.historyOfBacklogs
+                              .map((b) => `${b.subject}-${b.semester}`)
+                              .join(", ")
+                          : "None"}
+                      </td>
+                      <td
+                        className="px-3 py-4 text-sm text-gray-900 max-w-xs truncate"
+                        title={student.aboutMe}
+                      >
+                        {student.aboutMe}
+                      </td>
+                      <td className="px-3 py-4 text-sm text-gray-900 max-w-xs">
+                        {Array.isArray(student.skills)
+                          ? student.skills.join(", ")
+                          : student.skills}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs ${
-                            student.isPlaced ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          className={`px-2 py-1 text-xs rounded-full ${
+                            student.placementStatus === "placed" ||
+                            student.isPlaced
+                              ? "bg-green-100 text-green-800"
+                              : student.placementStatus === "unplaced"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-gray-100 text-gray-800"
                           }`}
                         >
-                          {column.getter(student, index)}
+                          {student.placementStatus === "placed" ||
+                          student.isPlaced
+                            ? "Placed"
+                            : "Unplaced"}
                         </span>
-                      ) : column.key === "consentStatus" ? (
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs ${
-                            student.placementConsent?.hasConsented
+                          className={`px-2 py-1 text-xs rounded-full ${
+                            student.consentStatus?.hasAgreed
                               ? "bg-green-100 text-green-800"
                               : "bg-red-100 text-red-800"
                           }`}
                         >
-                          {column.getter(student, index)}
+                          {student.consentStatus?.hasAgreed
+                            ? "Signed"
+                            : "Not Signed"}
                         </span>
-                      ) : column.key === "digitalSignature" && student.placementConsent?.signatureUrl ? (
-                        <a
-                          href={getSignatureHref(student.placementConsent.signatureUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          View Signature
-                        </a>
-                      ) : column.key === "resumeDocument" && student.documents?.resume ? (
-                        <a
-                          href={getFileHref(student.documents.resume)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          View Resume
-                        </a>
-                      ) : column.key === "idCardDocument" && student.documents?.collegeIdCard ? (
-                        <a
-                          href={getFileHref(student.documents.collegeIdCard)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          View ID Card
-                        </a>
-                      ) :
-                        column.key === "marksheetDocument" &&
-                        Array.isArray(student.documents?.marksheets) &&
-                        student.documents.marksheets.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {student.documents.marksheets.map((marksheetUrl, fileIndex) => (
+                        {student.consentStatus?.agreedAt && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            {new Date(
+                              student.consentStatus.agreedAt,
+                            ).toLocaleDateString()}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.consentStatus?.signature ? (
+                          <a
+                            href={resolveSignatureUrl(
+                              student.consentStatus.signature,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View Signature
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">No Signature</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.documents?.resume ? (
+                          <a
+                            href={resolveUploadUrl(student.documents.resume)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View Resume
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">N/A</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.documents?.collegeIdCard ? (
+                          <a
+                            href={resolveUploadUrl(
+                              student.documents.collegeIdCard,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            View ID
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">N/A</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.documents?.marksheets?.length > 0 ? (
+                          student.documents.marksheets.map((marksheet, i) => (
                             <a
-                              key={`${student._id}-marksheet-${fileIndex}`}
-                              href={getFileHref(marksheetUrl)}
+                              key={i}
+                              href={resolveUploadUrl(marksheet)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline"
+                              className="text-blue-600 hover:underline block"
                             >
-                              {`View${fileIndex + 1}`}
+                              View {i + 1}
                             </a>
-                          ))}
-                        </div>
-                      ) : column.key === "otpVerified" ? (
+                          ))
+                        ) : (
+                          <span className="text-gray-400">N/A</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs ${
-                            student.otpVerified ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                          className={`px-2 py-1 text-xs rounded-full ${
+                            student.otpVerified
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
                           }`}
                         >
-                          {column.getter(student, index)}
+                          {student.otpVerified ? "Verified" : "Not Verified"}
                         </span>
-                      ) : column.key === "profileStatus" ? (
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm">
                         <span
-                          className={`px-2 py-1 rounded-full text-xs ${
+                          className={`px-2 py-1 text-xs rounded-full ${
                             student.profileComplete
                               ? "bg-green-100 text-green-800"
                               : "bg-yellow-100 text-yellow-800"
                           }`}
                         >
-                          {column.getter(student, index)}
+                          {student.profileComplete ? "Complete" : "Incomplete"}
                         </span>
-                      ) : column.key === "linkedinUrl" || column.key === "githubUrl" ? (
-                        column.getter(student, index) !== "N/A" ? (
-                          <a
-                            href={column.getter(student, index)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            View
-                          </a>
-                        ) : (
-                          "N/A"
-                        )
-                      ) : column.key === "resumeURL" ? (
-                        column.getter(student, index) !== "N/A" ? (
-                          <a
-                            href={
-                              String(column.getter(student, index)).startsWith("http")
-                                ? column.getter(student, index)
-                                : `${API_BASE}${column.getter(student, index)}`
-                            }
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            View
-                          </a>
-                        ) : (
-                          "N/A"
-                        )
-                      ) : column.key === "aadharURL" || column.key === "panURL" ? (
-                        column.getter(student, index) !== "N/A" ? (
-                          <a
-                            href={
-                              String(column.getter(student, index)).startsWith("http")
-                                ? column.getter(student, index)
-                                : `${API_BASE}${column.getter(student, index)}`
-                            }
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            View
-                          </a>
-                        ) : (
-                          "N/A"
-                        )
-                      ) : column.key === "linkedInURL" || column.key === "githubURL" ? (
-                        column.getter(student, index) !== "N/A" ? (
-                          <a
-                            href={column.getter(student, index)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            View
-                          </a>
-                        ) : (
-                          "N/A"
-                        )
-                      ) : column.key === "aboutMe" ? (
-                        (() => {
-                          const fullText = column.getter(student, index) || "N/A";
-                          const isExpanded = !!expandedAboutMe[student._id];
-                          const shouldTruncate =
-                            typeof fullText === "string" && fullText.length > 90;
-                          const displayText =
-                            shouldTruncate && !isExpanded
-                              ? `${fullText.slice(0, 90)}...`
-                              : fullText;
-
-                          return (
-                            <div className="max-w-xs">
-                              <span>{displayText}</span>
-                              {shouldTruncate && (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleAboutMe(student._id)}
-                                  className="ml-2 text-blue-600 hover:underline text-xs"
-                                >
-                                  {isExpanded ? "Read less" : "Read more"}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })()
-                      ) : (
-                        column.getter(student, index)
-                      )}
-                    </td>
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {student.registeredAt
+                          ? new Date(student.registeredAt).toLocaleDateString()
+                          : "N/A"}
+                      </td>
+                      <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <button
+                          onClick={() => handleDeleteStudent(student)}
+                          disabled={
+                            deletingStudentId === (student._id || student.id)
+                          }
+                          className="px-3 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50"
+                        >
+                          {deletingStudentId === (student._id || student.id)
+                            ? "Deleting..."
+                            : "Delete"}
+                        </button>
+                      </td>
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {students.length === 0 && (
-            <div className="text-center py-10 text-gray-500">
-              No students match the selected filters.
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       </div>
-
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end pointer-events-none">
-          <div className="absolute inset-0 z-0 bg-slate-900/5 backdrop-blur-[2px] pointer-events-none" />
-          <div className="relative z-10 w-full max-w-md h-full bg-white shadow-xl overflow-y-auto pointer-events-auto">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Filter & Sort</h2>
-              <button onClick={() => setDrawerOpen(false)} className="text-2xl">
-                x
-              </button>
-            </div>
-
-            <div className="p-4 border-b">
-              <h3 className="text-sm font-semibold uppercase text-gray-500 mb-3">
-                Phase 1 - Field Selection
-              </h3>
-              <div className="space-y-4">
-                {FIELD_GROUPS.map((group) => (
-                  <div key={group.title}>
-                    <p className="font-semibold text-sm mb-2">{group.title}</p>
-                    <div className="space-y-2">
-                      {group.fields.map((field) => (
-                        <label key={field} className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={selectedFields.includes(field)}
-                            onChange={() => toggleFieldSelection(field)}
-                          />
-                          {FIELD_LABELS[field]}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <h3 className="text-sm font-semibold uppercase text-gray-500">
-                Phase 2 - Conditions Builder
-              </h3>
-              {selectedFields.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  Select fields in Phase 1 to configure filter conditions.
-                </p>
-              ) : (
-                selectedFields.map((field) => (
-                  <div key={field} className="p-3 border rounded-lg bg-gray-50">
-                    {renderConditionControl(field)}
-                  </div>
-                ))
-              )}
-
-              <div className="pt-4 border-t">
-                <h3 className="text-sm font-semibold uppercase text-gray-500 mb-2">
-                  Sort
-                </h3>
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={sort.field}
-                    onChange={(e) =>
-                      setSort((prev) => ({ ...prev, field: e.target.value }))
-                    }
-                    className="border rounded px-2 py-2 text-sm"
-                  >
-                    {SORT_FIELDS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={sort.order}
-                    onChange={(e) =>
-                      setSort((prev) => ({ ...prev, order: e.target.value }))
-                    }
-                    className="border rounded px-2 py-2 text-sm"
-                  >
-                    <option value="asc">Ascending</option>
-                    <option value="desc">Descending</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 border-t bg-white sticky bottom-0 flex gap-2">
-              <button
-                onClick={applyFilters}
-                disabled={queryLoading}
-                className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {queryLoading ? "Applying..." : "View"}
-              </button>
-              <button
-                onClick={clearFilters}
-                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded hover:bg-gray-300"
-              >
-                Clear All
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

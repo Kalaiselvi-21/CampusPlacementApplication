@@ -12,6 +12,7 @@ const CompleteProfile = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [completionStatus, setCompletionStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isCgpaLocked, setIsCgpaLocked] = useState(false);
 
   // Form data states
   const [basicInfo, setBasicInfo] = useState({
@@ -20,7 +21,7 @@ const CompleteProfile = () => {
     degree: "",
     department: "",
     graduationYear: "",
-    cgpa: "",
+    cgpa: user?.profile?.cgpa ?? user?.cgpa ?? "",
     // New fields
     gender: "",
     dateOfBirth: "",
@@ -33,9 +34,9 @@ const CompleteProfile = () => {
     phoneNumber: "",
     linkedinUrl: "",
     githubUrl: "",
-    resumeLink: "",
-    aadharLink: "",
-    panLink: "",
+    resumeDriveLink: "",
+    panCardDriveLink: "",
+    aadharCardDriveLink: "",
     currentBacklogs: 0,
     historyOfBacklogs: [], // Add this field
     aboutMe: "",
@@ -109,16 +110,39 @@ const CompleteProfile = () => {
   useEffect(() => {
     // Only fetch completion status if token exists
     const token = localStorage.getItem("token");
-    if (token && token !== 'null' && token !== 'undefined') {
+    if (token && token !== "null" && token !== "undefined") {
       fetchCompletionStatus();
     }
   }, []);
 
+  // Initialize CGPA lock state based on existing user profile value.
+  useEffect(() => {
+    if (user) {
+      const existingCgpa =
+        user?.profile?.cgpa !== undefined && user?.profile?.cgpa !== null
+          ? user.profile.cgpa
+          : user?.cgpa;
+
+      if (
+        existingCgpa !== undefined &&
+        existingCgpa !== null &&
+        existingCgpa !== ""
+      ) {
+        setBasicInfo((prev) => ({ ...prev, cgpa: existingCgpa }));
+        setIsCgpaLocked(true);
+      } else {
+        setIsCgpaLocked(false);
+      }
+    }
+  }, [user]);
+
   const fetchCompletionStatus = async () => {
     try {
       const token = localStorage.getItem("token");
-      if (!token || token === 'null' || token === 'undefined') {
-        console.log('[CompleteProfile] No valid token found, skipping API call');
+      if (!token || token === "null" || token === "undefined") {
+        console.log(
+          "[CompleteProfile] No valid token found, skipping API call",
+        );
         return;
       }
 
@@ -186,20 +210,10 @@ const CompleteProfile = () => {
   };
 
   const submitBasicInfo = async () => {
-    if (!basicInfo.cgpa && basicInfo.cgpa !== 0) {
-      toast.error("CGPA is required");
-      return;
-    }
-
     const token = localStorage.getItem("token");
-    if (!token || token === 'null' || token === 'undefined') {
+    if (!token || token === "null" || token === "undefined") {
       toast.error("Authentication required. Please log in again.");
       navigate("/login");
-      return;
-    }
-
-    if (!basicInfo.resumeLink || !basicInfo.aadharLink || !basicInfo.panLink) {
-      toast.error("Resume URL, Aadhaar URL, and PAN URL are required");
       return;
     }
 
@@ -222,6 +236,13 @@ const CompleteProfile = () => {
       });
       toast.success("Basic information saved!");
       setValidationErrors([]);
+      if (
+        basicInfo.cgpa !== "" &&
+        basicInfo.cgpa !== null &&
+        basicInfo.cgpa !== undefined
+      ) {
+        setIsCgpaLocked(true);
+      }
       setCurrentStep(2);
     } catch (error) {
       console.log("Error response:", error.response?.data);
@@ -261,7 +282,7 @@ const CompleteProfile = () => {
 
   const submitFiles = async () => {
     const token = localStorage.getItem("token");
-    if (!token || token === 'null' || token === 'undefined') {
+    if (!token || token === "null" || token === "undefined") {
       toast.error("Authentication required. Please log in again.");
       navigate("/login");
       return;
@@ -283,7 +304,7 @@ const CompleteProfile = () => {
       // Resume validation - required
       if (!files.resume) {
         errors.push("resume");
-      } 
+      }
       // else if (!resumeTypes.includes(files.resume.mimetype)) {
       //   errors.push("resume_format");
       // }
@@ -291,7 +312,7 @@ const CompleteProfile = () => {
       // College ID validation - required
       if (!files.collegeIdCard) {
         errors.push("collegeIdCard");
-      } 
+      }
       // else if (!idCardTypes.includes(files.collegeIdCard.mimetype)) {
       //   errors.push("collegeIdCard_format");
       // }
@@ -299,7 +320,7 @@ const CompleteProfile = () => {
       // Marksheets validation - required, at least 1 file
       if (!files.marksheets || files.marksheets.length === 0) {
         errors.push("marksheets");
-      } 
+      }
       // else {
       //   for (let file of files.marksheets) {
       //     if (!marksheetTypes.includes(file.mimetype)) {
@@ -359,19 +380,23 @@ const CompleteProfile = () => {
 
       // Update user context with new profile data
       const responseUser = response.data.user;
-      const updatedUser = responseUser ? {
-        ...user,
-        ...responseUser,
-        placementPolicyConsent: responseUser.placementPolicyConsent || user.placementPolicyConsent
-      } : {
-        ...user,
-        profile: {
-          ...user.profile,
-          ...basicInfo,
-          isProfileComplete: true,
-          profileCompletionPercentage: 100,
-        },
-      };
+      const updatedUser = responseUser
+        ? {
+            ...user,
+            ...responseUser,
+            placementPolicyConsent:
+              responseUser.placementPolicyConsent ||
+              user.placementPolicyConsent,
+          }
+        : {
+            ...user,
+            profile: {
+              ...user.profile,
+              ...basicInfo,
+              isProfileComplete: true,
+              profileCompletionPercentage: 100,
+            },
+          };
       updateUser(updatedUser);
 
       toast.success("Profile completed successfully!");
@@ -483,6 +508,7 @@ const CompleteProfile = () => {
             name="dateOfBirth"
             value={basicInfo.dateOfBirth}
             onChange={handleBasicInfoChange}
+            max={new Date().toISOString().split("T")[0]}
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />
@@ -629,7 +655,8 @@ const CompleteProfile = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            CGPA *
+            CGPA
+            {isCgpaLocked ? " (Read-only - already set)" : " (Enter this once)"}
           </label>
           <input
             type="number"
@@ -641,7 +668,12 @@ const CompleteProfile = () => {
             onWheel={(e) => e.target.blur()}
             onChange={handleBasicInfoChange}
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
+            disabled={
+              isCgpaLocked &&
+              (user?.role === "student" ||
+                user?.role === "placement_representative" ||
+                user?.role === "pr")
+            }
           />
         </div>
 
@@ -717,6 +749,51 @@ const CompleteProfile = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
+            Resume Drive Link *
+          </label>
+          <input
+            type="url"
+            name="resumeDriveLink"
+            value={basicInfo.resumeDriveLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/file/d/.../view"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            PAN Card Drive Link *
+          </label>
+          <input
+            type="url"
+            name="panCardDriveLink"
+            value={basicInfo.panCardDriveLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/file/d/.../view"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Aadhar Card Drive Link *
+          </label>
+          <input
+            type="url"
+            name="aadharCardDriveLink"
+            value={basicInfo.aadharCardDriveLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/file/d/.../view"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
             Current Backlogs *
           </label>
           <input
@@ -727,52 +804,6 @@ const CompleteProfile = () => {
             onWheel={(e) => e.target.blur()}
             onChange={handleBasicInfoChange}
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Resume URL *
-          </label>
-          <input
-            type="url"
-            name="resumeLink"
-            value={basicInfo.resumeLink}
-            onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/... or direct resume link"
-            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Aadhaar Card URL *
-          </label>
-          <input
-            type="url"
-            name="aadharLink"
-            value={basicInfo.aadharLink}
-            onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/... or direct Aadhaar link"
-            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            PAN Card URL *
-          </label>
-          <input
-            type="url"
-            name="panLink"
-            value={basicInfo.panLink}
-            onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/... or direct PAN link"
-            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
           />
         </div>
 
@@ -1030,7 +1061,8 @@ const CompleteProfile = () => {
                   Complete Your Profile
                 </h1>
                 <p className="text-gray-600">
-                  Fill in all required information to access the placement portal
+                  Fill in all required information to access the placement
+                  portal
                 </p>
               </div>
             </div>

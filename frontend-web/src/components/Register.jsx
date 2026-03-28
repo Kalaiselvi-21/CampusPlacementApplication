@@ -23,7 +23,6 @@ const Register = () => {
     { value: "student", label: "Student" },
     { value: "placement_officer", label: "Placement Officer" },
     { value: "placement_representative", label: "Placement Representative" },
-    { value: 'staff', label: 'Staff' }
   ];
 
   const checkPasswordStrength = (password) => {
@@ -109,7 +108,8 @@ const Register = () => {
         },
       });
     } catch (error) {
-      const errorMessage = error.response?.data?.message || "Registration failed";
+      const errorMessage =
+        error.response?.data?.message || "Registration failed";
       console.error("Registration error:", error);
       toast.error(errorMessage);
     } finally {
@@ -191,9 +191,17 @@ const Register = () => {
                   </option>
                 ))}
               </select>
-              {(formData.role === 'placement_representative' || formData.role === 'placement_officer') && (
+              {(formData.role === "placement_representative" ||
+                formData.role === "placement_officer") && (
                 <p className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                  💡 For PR/PO registration: <Link to="/request-pr-po" className="underline font-semibold hover:text-blue-800">Request access first</Link>, wait for PO approval, then register here.
+                  💡 For PR/PO registration:{" "}
+                  <Link
+                    to="/request-pr-po"
+                    className="underline font-semibold hover:text-blue-800"
+                  >
+                    Request access first
+                  </Link>
+                  , wait for PO approval, then register here.
                 </p>
               )}
             </div>
@@ -227,12 +235,14 @@ const Register = () => {
               )}
               {formData.role === "placement_representative" && (
                 <p className="mt-1 text-xs text-gray-500">
-                  PR must use institutional email (@gct.ac.in) - Must be approved by PO
+                  PR must use institutional email (@gct.ac.in) - Must be
+                  approved by PO
                 </p>
               )}
               {formData.role === "placement_officer" && (
                 <p className="mt-1 text-xs text-gray-500">
-                  PO must use institutional email (@gct.ac.in) - Must be approved by existing PO
+                  PO must use institutional email (@gct.ac.in) - Must be
+                  approved by existing PO
                 </p>
               )}
             </div>
