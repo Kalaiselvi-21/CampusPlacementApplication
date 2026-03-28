@@ -6,6 +6,7 @@ import {
   Navigate,
 } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { NotificationsProvider } from "./contexts/NotificationsContext";
 import { Toaster } from "react-hot-toast";
 import Navbar from "./components/Navbar";
 import Login from "./components/Login.jsx";
@@ -37,6 +38,9 @@ import CreditsBadge from "./components/CreditsBadge.jsx";
 import PRRegistrationRequest from "./components/PRRegistrationRequest.jsx";
 import POAllowlistManager from "./components/POAllowlistManager.jsx";
 import CheckRegistrationStatus from "./components/CheckRegistrationStatus.jsx";
+// ✅ ADDED
+import BoxFileBoard from "./components/BoxFileBoard";
+import JobDriveFiles from "./components/JobDriveFiles";
 
 // Dashboard redirect component
 function DashboardRedirect() {
@@ -62,13 +66,14 @@ function DashboardRedirect() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div className="App">
-          <NavigationGuard />
-          <Navbar />
-          <Toaster position="top-right" />
-          <CreditsBadge />
-          <Routes>
+      <NotificationsProvider>
+        <Router>
+          <div className="App">
+            <NavigationGuard />
+            <Navbar />
+            <Toaster position="top-right" />
+            <CreditsBadge />
+            <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/request-pr-po" element={<PRRegistrationRequest />} />
@@ -196,7 +201,16 @@ function App() {
               }
             />
 
-            <Route path="/all-job-drives" element={<AllJobDrives />} />
+            <Route
+              path="/all-job-drives"
+              element={
+                <ProtectedRoute
+                  allowedRoles={["po", "placement_officer", "pr", "placement_representative"]}
+                >
+                  <AllJobDrives />
+                </ProtectedRoute>
+              }
+            />
 
             <Route path="/create-job-drive" element={<CreateJobDrive />} />
 
@@ -224,6 +238,24 @@ function App() {
             />
 
             <Route
+              path="/box-file-board"
+              element={
+                <ProtectedRoute allowedRoles={["po", "placement_officer"]}>
+                  <BoxFileBoard />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/job-drive-files"
+              element={
+                <ProtectedRoute allowedRoles={["po", "placement_officer"]}>
+                  <JobDriveFiles />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/po-manage-registrations"
               element={
                 <ProtectedRoute allowedRoles={["po", "placement_officer"]}>
@@ -233,9 +265,10 @@ function App() {
             />
 
             <Route path="/" element={<Navigate to="/login" />} />
-          </Routes>
-        </div>
-      </Router>
+            </Routes>
+          </div>
+        </Router>
+      </NotificationsProvider>
     </AuthProvider>
   );
 }

@@ -7,22 +7,9 @@ const { auth } = require("../middleware/auth");
 const neonService = require("../services/database/neonService");
 const logger = require("../services/database/logger");
 const { emitPlacementDataUpdate } = require("../utils/socketUtils");
+const { uploadMulterFileToS3 } = require("../services/storage/s3Upload");
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../uploads/placement-data/");
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const batch = req.body.batch || "unknown";
-    const ext = path.extname(file.originalname);
-    cb(null, `${batch}-${Date.now()}${ext}`);
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage: storage,
@@ -203,10 +190,14 @@ const saveAnalyticsToNeon = async ({ batch, userId, placementData, statistics, f
 };
 
 // Helper function to parse complex CSVs with department sections and extra columns
-const parseCSV = (filePath) => {
+const parseCSV = (fileInput) => {
   return new Promise((resolve, reject) => {
     try {
-      const data = fs.readFileSync(filePath, "utf8");
+      const data = Buffer.isBuffer(fileInput)
+        ? fileInput.toString("utf8")
+        : typeof fileInput === "string"
+          ? fs.readFileSync(fileInput, "utf8")
+          : "";
       const lines = data.split(/\r?\n/).filter((line) => line.trim());
       const results = [];
       let currentDepartment = "";
@@ -610,17 +601,21 @@ router.post("/upload", auth, upload.single("file"), async (req, res) => {
     }
 
     let placementData = [];
-    const filePath = req.file.path;
     const fileExt = path.extname(req.file.originalname).toLowerCase();
 
     if (fileExt === ".csv") {
-      placementData = await parseCSV(filePath);
+      placementData = await parseCSV(req.file.buffer);
     } else if (fileExt === ".pdf") {
       placementData = [];
     }
 
     const statistics = generateStatistics(placementData);
     let usedDatabase = null;
+
+    const uploaded = await uploadMulterFileToS3(req.file, {
+      prefix: "placement-analytics",
+      keyPrefix: `${batch}`,
+    });
 
     // Try NeonDB first (PRIMARY)
     try {
@@ -633,7 +628,7 @@ router.post("/upload", auth, upload.single("file"), async (req, res) => {
         placementData,
         statistics,
         fileName: req.file.originalname,
-        filePath,
+        filePath: uploaded.url,
       });
 
       const uploadDuration = Date.now() - uploadStartTime;

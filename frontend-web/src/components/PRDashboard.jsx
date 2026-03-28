@@ -16,6 +16,19 @@ const PRDashboard = () => {
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
+  // ✅ ADDED: Box file states
+  const [boxFileUploadEnabled, setBoxFileUploadEnabled] = useState(false);
+  const [boxFileBatch, setBoxFileBatch] = useState("");
+  const [existingBoxFile, setExistingBoxFile] = useState(null);
+  const [boxFileUploadLoading, setBoxFileUploadLoading] = useState(false);
+  const [boxFileReplaceMode, setBoxFileReplaceMode] = useState(false);
+  const [boxFileDeletedNotice, setBoxFileDeletedNotice] = useState(false);
+
+  // ✅ ADDED: Templates modal states
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+  const [templates, setTemplates] = useState(null);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+
   const handleViewDrive = (drive) => {
     setSelectedDrive(drive);
     setShowModal(true);
@@ -36,6 +49,175 @@ const PRDashboard = () => {
 
   const handleManageDrive = () => {
     navigate("/all-job-drives", { state: { fromPR: true } });
+  };
+
+  // ✅ ADDED
+  const fetchTemplates = async () => {
+    setTemplatesLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/templates/latest`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setTemplates(response.data?.templates || null);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      toast.error("Failed to fetch templates");
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  // ✅ ADDED
+  const handleDownloadFile = async (fileUrl, fileName) => {
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Failed to download file");
+    }
+  };
+
+  // ✅ ADDED
+  const openTemplateModal = () => {
+    setShowTemplatesModal(true);
+    fetchTemplates();
+  };
+
+  // ✅ ADDED
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString();
+  };
+
+  // 🔁 MODIFIED: normalize Postgres array-like batch values such as {"2023-2027","2023-2027"}.
+  const formatBatch = (batch) => {
+    if (Array.isArray(batch)) {
+      return [...new Set(batch)].join(", ");
+    }
+
+    if (typeof batch === "string") {
+      const trimmed = batch.trim();
+
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        const batches = trimmed
+          .substring(1, trimmed.length - 1)
+          .split(",")
+          .map((value) => value.trim().replace(/"/g, ""))
+          .filter(Boolean);
+
+        return [...new Set(batches)].join(", ");
+      }
+    }
+
+    return batch;
+  };
+
+  // ✅ ADDED
+  const fetchBoxFileStatus = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const settingsRes = await axios.get(`${API_BASE}/api/box-files/toggle-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setBoxFileUploadEnabled(Boolean(settingsRes.data?.enabled));
+
+      if (settingsRes.data?.enabled) {
+        const fileRes = await axios.get(`${API_BASE}/api/box-files/my-file`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (fileRes.data?.file) {
+          setExistingBoxFile(fileRes.data.file);
+          setBoxFileBatch(formatBatch(fileRes.data.file.batch || fileRes.data.file.batch_name || ""));
+          setBoxFileDeletedNotice(false);
+        } else {
+          // Clear stale file card when backend says record no longer exists (e.g. deleted by PO).
+          if (existingBoxFile) {
+            setBoxFileDeletedNotice(true);
+          }
+          setExistingBoxFile(null);
+          setBoxFileReplaceMode(false);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching box file status:", error);
+    }
+  };
+
+  // ✅ ADDED
+  const handleBoxFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const batchRegex = /^\d{4}-\d{4}$/;
+    if (!batchRegex.test(boxFileBatch)) {
+      toast.error("Please enter batch in YYYY-YYYY format (e.g., 2023-2027)");
+      return;
+    }
+
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Only PDF and DOCX files are allowed");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("batch", boxFileBatch);
+    formData.append("department", user?.profile?.department || "");
+
+    setBoxFileUploadLoading(true);
+    const toastId = toast.loading(existingBoxFile ? "Replacing file..." : "Uploading file...");
+
+    try {
+      const token = localStorage.getItem("token");
+      const fileId = existingBoxFile?.id || existingBoxFile?._id || existingBoxFile?.file_id;
+      const endpoint = existingBoxFile && fileId
+        ? `${API_BASE}/api/box-files/replace/${fileId}`
+        : `${API_BASE}/api/box-files/upload`;
+
+      const response = await axios.post(endpoint, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      setExistingBoxFile(response.data?.file || null);
+      setBoxFileBatch(formatBatch(response.data?.file?.batch || response.data?.file?.batch_name || boxFileBatch));
+      setBoxFileReplaceMode(false);
+      setBoxFileDeletedNotice(false);
+      toast.success(response.data?.message || "File saved successfully", { id: toastId });
+    } catch (error) {
+      const backendMessage = error.response?.data?.message || "Upload failed";
+
+      if (error.response?.status === 404 || /file record not found/i.test(backendMessage)) {
+        // The row was removed (typically by PO delete). Reset stale client state and allow fresh upload.
+        setExistingBoxFile(null);
+        setBoxFileReplaceMode(false);
+        setBoxFileDeletedNotice(true);
+        await fetchBoxFileStatus();
+        toast.error("Your previous box file was deleted by PO. Please upload again.", { id: toastId });
+      } else {
+        toast.error(backendMessage, { id: toastId });
+      }
+    } finally {
+      setBoxFileUploadLoading(false);
+      event.target.value = "";
+    }
   };
 
   // Add helper function to check if drive is active (not ended)
@@ -240,6 +422,7 @@ const PRDashboard = () => {
     }
 
     fetchAllData();
+    fetchBoxFileStatus();
   }, [user, navigate]);
 
   const fetchAllData = async () => {
@@ -346,6 +529,12 @@ const PRDashboard = () => {
           </div>
           <div className="flex space-x-4">
             <button
+              onClick={openTemplateModal}
+              className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors"
+            >
+              View Templates
+            </button>
+            <button
               onClick={() => navigate("/edit-profile")}
               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
             >
@@ -395,6 +584,100 @@ const PRDashboard = () => {
             </p>
           </div>
         </div>
+
+        {/* ✅ ADDED: Box File Upload Section */}
+        {boxFileUploadEnabled && (
+          <div className="bg-white shadow rounded-lg mb-8">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Upload Box File</h2>
+              <p className="text-sm text-gray-600">Submit your department's box file for the current batch</p>
+            </div>
+            <div className="p-6">
+              {boxFileDeletedNotice && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Your previously uploaded box file was deleted by PO. Please reupload the file for this batch.
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Batch *</label>
+                  <input
+                    type="text"
+                    value={boxFileBatch}
+                    onChange={(e) => setBoxFileBatch(e.target.value)}
+                    placeholder="YYYY-YYYY (e.g., 2023-2027)"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                    disabled={existingBoxFile && !boxFileReplaceMode}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                  <input
+                    type="text"
+                    value={user?.profile?.department || ""}
+                    className="w-full px-4 py-2 border border-gray-200 bg-gray-50 rounded-lg text-gray-500"
+                    disabled
+                  />
+                </div>
+              </div>
+
+              {!existingBoxFile || boxFileReplaceMode ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Select File (PDF/DOCX) *</label>
+                    <input
+                      type="file"
+                      accept=".pdf,.docx"
+                      onChange={handleBoxFileUpload}
+                      disabled={boxFileUploadLoading || !boxFileBatch}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+                    />
+                  </div>
+                  {boxFileReplaceMode && (
+                    <button onClick={() => setBoxFileReplaceMode(false)} className="text-sm text-gray-600 underline">
+                      Cancel replacement
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-indigo-50 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white rounded-lg text-indigo-600">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-indigo-900">
+                        {existingBoxFile.fileName || existingBoxFile.file_name || "Unknown File"}
+                      </p>
+                      <p className="text-sm text-indigo-700">
+                        Uploaded on {formatDate(existingBoxFile.uploadedAt || existingBoxFile.uploaded_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <a
+                      href={existingBoxFile.fileUrl || existingBoxFile.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-white text-indigo-600 border border-indigo-200 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors"
+                    >
+                      View File
+                    </a>
+                    <button
+                      onClick={() => setBoxFileReplaceMode(true)}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
+                    >
+                      Replace File
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* All Available Drives - Fix the filtering */}
         <div className="bg-white shadow rounded-lg mb-8">
@@ -551,6 +834,83 @@ const PRDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* ✅ ADDED: Templates Modal */}
+      {showTemplatesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-900">Placement Templates</h3>
+              <button
+                onClick={() => setShowTemplatesModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6">
+              {templatesLoading ? (
+                <div className="text-center py-8">Loading templates...</div>
+              ) : templates ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {["spoc", "expenditure", "box"].map((type) => {
+                    const template = templates[type];
+                    return (
+                      <div key={type} className="bg-gray-50 p-5 rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+                        <div className="flex flex-col h-full">
+                          <h5 className="font-bold text-gray-800 uppercase mb-3 border-b pb-2">{type} File</h5>
+                          {template ? (
+                            <div className="flex-1 flex flex-col">
+                              <p className="text-sm font-medium text-gray-900 mb-1 break-words" title={template.file_name}>
+                                {template.file_name}
+                              </p>
+                              <p className="text-xs text-gray-500 mb-4">
+                                Updated: {formatDate(template.created_at || template.updated_at)}
+                              </p>
+                              <div className="mt-auto flex gap-2">
+                                <a
+                                  href={template.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-1 bg-blue-600 text-white text-center py-2 px-4 rounded text-sm hover:bg-blue-700 transition-colors"
+                                >
+                                  View
+                                </a>
+                                <button
+                                  onClick={() => handleDownloadFile(template.file_url, template.file_name)}
+                                  className="flex-1 bg-teal-600 text-white text-center py-2 px-4 rounded text-sm hover:bg-teal-700 transition-colors"
+                                >
+                                  Download
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex-1 flex items-center justify-center text-gray-400 italic py-4">
+                              No file uploaded
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">No templates available at the moment.</p>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 text-right">
+              <button
+                onClick={() => setShowTemplatesModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {showModal && <DriveModal drive={selectedDrive} onClose={closeModal} />}

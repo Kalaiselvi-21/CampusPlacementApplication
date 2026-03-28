@@ -64,13 +64,13 @@ class DatabaseService {
   /**
    * Delete user with automatic PR allowlist cleanup
    */
-  async deleteUserWithCleanup(userId) {
+  async deleteUserWithCleanup(userId, deletedBy = null, deletionReason = null) {
     const startTime = Date.now();
 
     try {
       logger.logAttempt('NEON', 'DELETE_USER_WITH_CLEANUP', 'User', `Deleting user with cleanup: ${userId}`);
       
-      const result = await neonService.deleteUserById(userId);
+      const result = await neonService.deleteUserById(userId, deletedBy, deletionReason);
 
       const duration = Date.now() - startTime;
       logger.logSuccess('NEON', 'DELETE_USER_WITH_CLEANUP', 'User', `Completed in ${duration}ms`, userId);

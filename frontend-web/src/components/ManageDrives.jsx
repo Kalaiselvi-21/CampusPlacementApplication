@@ -15,7 +15,7 @@ import {
 const API_BASE = process.env.REACT_APP_API_BASE;
 
 const ManageDrives = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [drives, setDrives] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
@@ -488,8 +488,17 @@ const ManageDrives = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      navigate("/login");
+    }
+  }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
     fetchDrives();
-  }, []);
+  }, [authLoading, user]);
 
   const fetchDrives = async () => {
     try {

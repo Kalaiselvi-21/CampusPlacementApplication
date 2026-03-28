@@ -4,15 +4,59 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.connected = false;
+    this.joinPayload = null;
+    this.serverUrl = null;
   }
 
-  connect(userRole) {
-    if (this.socket) {
-      this.disconnect();
+  normalizeJoinPayload(userOrRole) {
+    if (!userOrRole) return null;
+
+    if (typeof userOrRole === "string") {
+      return { role: userOrRole };
     }
 
+    const role = userOrRole.role;
+    const userId =
+      userOrRole.id || userOrRole._id || userOrRole.userId || userOrRole.user_id;
+    const department =
+      userOrRole.department || userOrRole.profile?.department || userOrRole.profile_department;
+
+    const payload = {};
+    if (role) payload.role = role;
+    if (userId) payload.userId = userId;
+    if (department) payload.department = department;
+    return Object.keys(payload).length ? payload : null;
+  }
+
+  mergeJoinPayload(nextPayload) {
+    if (!nextPayload) return;
+    const current = this.joinPayload || {};
+    this.joinPayload = {
+      ...current,
+      ...Object.fromEntries(
+        Object.entries(nextPayload).filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== ""),
+      ),
+    };
+  }
+
+  connect(userOrRole) {
+    const nextPayload = this.normalizeJoinPayload(userOrRole);
+    this.mergeJoinPayload(nextPayload);
+
     const serverUrl =
-      process.env.REACT_APP_SERVER_URL;
+      process.env.REACT_APP_SERVER_URL || process.env.REACT_APP_API_BASE || "http://localhost:5000";
+
+    // If already connected to same server, just refresh room membership.
+    if (this.socket && this.serverUrl === serverUrl) {
+      if (this.isConnected() && this.joinPayload) {
+        this.socket.emit("join-room", this.joinPayload);
+      }
+      return this.socket;
+    }
+
+    // Server changed or new socket: reset and connect.
+    if (this.socket) this.disconnect();
+    this.serverUrl = serverUrl;
 
     this.socket = io(serverUrl, {
       transports: ["websocket", "polling"],
@@ -23,9 +67,9 @@ class SocketService {
       console.log("Connected to server:", this.socket.id);
       this.connected = true;
 
-      // Join role-specific room
-      if (userRole) {
-        this.socket.emit("join-room", { role: userRole });
+      // Join role/user/department rooms (backward compatible)
+      if (this.joinPayload) {
+        this.socket.emit("join-room", this.joinPayload);
       }
     });
 

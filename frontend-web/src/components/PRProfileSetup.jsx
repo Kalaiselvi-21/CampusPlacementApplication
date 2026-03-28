@@ -630,6 +630,51 @@ const [fileValidationErrors, setFileValidationErrors] = useState([]);
             )}
           />
         </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Resume Link *
+          </label>
+          <input
+            type="url"
+            name="resumeLink"
+            value={formData.resumeLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/your-resume"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Aadhar Card Link *
+          </label>
+          <input
+            type="url"
+            name="aadharLink"
+            value={formData.aadharLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/your-aadhar"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            PAN Card Link *
+          </label>
+          <input
+            type="url"
+            name="panLink"
+            value={formData.panLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/your-pan"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
       </div>
 
       <div>

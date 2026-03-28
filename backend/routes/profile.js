@@ -6,6 +6,7 @@ const { emitProfileUpdate } = require("../utils/socketUtils");
 const logger = require("../services/database/logger");
 const neonService = require("../services/database/neonService");
 const { sequelize } = require("../config/neonConnection");
+const { uploadMulterFileToS3 } = require("../services/storage/s3Upload");
 
 const router = express.Router();
 
@@ -27,16 +28,7 @@ const resolveNeonUser = async (reqUser) => {
   return user;
 };
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, "../uploads");
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
@@ -95,6 +87,9 @@ router.get("/", auth, async (req, res) => {
       aboutMe: up.about_me || null,
       skills: up.skills || [],
       placementStatus: up.placement_status || null,
+      resumeLink: up.profile_data?.resume_link || null,
+      aadharLink: up.profile_data?.aadhar_link || null,
+      panLink: up.profile_data?.pan_link || null,
       isProfileComplete: up.is_profile_complete || false,
       profileCompletionPercentage: up.profile_completion_percentage || 0,
       photo: up.photo || null,
@@ -122,10 +117,42 @@ router.get("/completion-status", auth, async (req, res) => {
     const user = await resolveNeonUser(req.user);
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Fetch full profile to check completion status and mandatory fields
+    const [profileRows] = await sequelize.query(
+      `SELECT * FROM user_profiles WHERE user_id = $1 LIMIT 1`,
+      { bind: [req.user.id] }
+    );
+    const profile = profileRows?.[0];
+    const profileData = profile?.profile_data || {};
+
+    // Determine role for URL field validation
+    const normalizedRole = String(user.role || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '_');
+    
+    const mustHaveIdentityUrls = [
+      'student',
+      'placement_representative',
+      'placement_officer',
+      'pr',
+      'po'
+    ].some(role => normalizedRole.includes(role.replace(/_/g, '_')));
+
+    const missingFields = [];
+    
+    // Check mandatory URL fields for students and placement representatives
+    if (mustHaveIdentityUrls && profile?.is_profile_complete) {
+      if (!profileData.resume_link?.trim?.()) missingFields.push('resumeLink');
+      if (!profileData.aadhar_link?.trim?.()) missingFields.push('aadharLink');
+      if (!profileData.pan_link?.trim?.()) missingFields.push('panLink');
+    }
+
     return res.json({
-      percentage: user.profile?.profileCompletionPercentage || 0,
-      isComplete: user.profile?.isProfileComplete || false,
-      missingFields: [],
+      percentage: profile?.profile_completion_percentage || 0,
+      isComplete: profile?.is_profile_complete || false,
+      missingFields,
+      hasAllMandatoryUrls: missingFields.length === 0 || !mustHaveIdentityUrls,
       database: "NEON",
     });
   } catch (error) {
@@ -174,6 +201,11 @@ router.put("/basic-info", auth, async (req, res) => {
       linkedin_url: req.body.linkedinUrl,
       github_url: req.body.githubUrl,
       current_backlogs: toNumericOrNull(req.body.currentBacklogs),
+      history_of_backlogs: Array.isArray(req.body.historyOfBacklogs)
+        ? req.body.historyOfBacklogs
+        : typeof req.body.historyOfBacklogs === "string"
+          ? JSON.parse(req.body.historyOfBacklogs)
+          : null,
       about_me: req.body.aboutMe,
       skills: Array.isArray(req.body.skills)
         ? req.body.skills
@@ -203,6 +235,24 @@ router.put("/basic-info", auth, async (req, res) => {
       `UPDATE user_profiles SET ${fields.join(", ")} WHERE user_id = $${index}`,
       { bind: values }
     );
+
+    const hasLinkFields =
+      req.body.resumeLink !== undefined ||
+      req.body.aadharLink !== undefined ||
+      req.body.panLink !== undefined;
+    if (hasLinkFields) {
+      const linkData = {};
+      if (req.body.resumeLink !== undefined) linkData.resume_link = req.body.resumeLink || null;
+      if (req.body.aadharLink !== undefined) linkData.aadhar_link = req.body.aadharLink || null;
+      if (req.body.panLink !== undefined) linkData.pan_link = req.body.panLink || null;
+      await sequelize.query(
+        `UPDATE user_profiles
+         SET profile_data = COALESCE(profile_data, '{}'::jsonb) || $2::jsonb,
+             updated_at = NOW()
+         WHERE user_id = $1`,
+        { bind: [req.user.id, JSON.stringify(linkData)] }
+      );
+    }
 
     if (req.body.name) {
       await sequelize.query(
@@ -256,19 +306,73 @@ router.post("/upload-files", auth, (req, res) => {
       const user = await resolveNeonUser(req.user);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      const fileData = {
-        photo: req.files?.photo?.[0]?.filename,
-        resume: req.files?.resume?.[0]?.filename,
-        collegeIdCard: req.files?.collegeIdCard?.[0]?.filename,
-        marksheets: req.files?.marksheets?.map((file) => file.filename) || [],
-      };
+      const [existingProfileRows] = await sequelize.query(
+        `SELECT photo, resume, college_id_card, marksheets, profile_data FROM user_profiles WHERE user_id = $1 LIMIT 1`,
+        { bind: [req.user.id] }
+      );
+      const existingProfile = existingProfileRows?.[0] || {};
+      const existingFiles = existingProfile?.profile_data?.files || {};
+
+      const uploads = {};
+
+      if (req.files?.photo?.[0]) {
+        uploads.photo = await uploadMulterFileToS3(req.files.photo[0], {
+          prefix: "profiles",
+          keyPrefix: `${req.user.id}/photo`,
+        });
+      }
+
+      if (req.files?.resume?.[0]) {
+        uploads.resume = await uploadMulterFileToS3(req.files.resume[0], {
+          prefix: "profiles",
+          keyPrefix: `${req.user.id}/resume`,
+        });
+      }
+
+      if (req.files?.collegeIdCard?.[0]) {
+        uploads.collegeIdCard = await uploadMulterFileToS3(req.files.collegeIdCard[0], {
+          prefix: "profiles",
+          keyPrefix: `${req.user.id}/collegeIdCard`,
+        });
+      }
+
+      if (Array.isArray(req.files?.marksheets) && req.files.marksheets.length > 0) {
+        uploads.marksheets = await Promise.all(
+          req.files.marksheets.map((file) =>
+            uploadMulterFileToS3(file, { prefix: "profiles", keyPrefix: `${req.user.id}/marksheets` })
+          )
+        );
+      }
+
+      const nextFiles = { ...existingFiles };
+      if (uploads.photo?.url) nextFiles.photo = uploads.photo.url;
+      if (uploads.resume?.url) nextFiles.resume = uploads.resume.url;
+      if (uploads.collegeIdCard?.url) nextFiles.collegeIdCard = uploads.collegeIdCard.url;
+      if (uploads.marksheets?.length) nextFiles.marksheets = uploads.marksheets.map((item) => item.url);
+
+      const marksheetsParam = uploads.marksheets?.length
+        ? uploads.marksheets.map((item) => item.url)
+        : null;
 
       await sequelize.query(
         `UPDATE user_profiles
-         SET profile_data = jsonb_set(COALESCE(profile_data, '{}'::jsonb), '{files}', $1::jsonb),
+         SET photo = COALESCE($2, photo),
+             resume = COALESCE($3, resume),
+             college_id_card = COALESCE($4, college_id_card),
+             marksheets = COALESCE($5::text[], marksheets),
+             profile_data = jsonb_set(COALESCE(profile_data, '{}'::jsonb), '{files}', $1::jsonb),
              updated_at = NOW()
-         WHERE user_id = $2`,
-        { bind: [JSON.stringify(fileData), req.user.id] }
+         WHERE user_id = $6`,
+        {
+          bind: [
+            JSON.stringify(nextFiles),
+            uploads.photo?.url || null,
+            uploads.resume?.url || null,
+            uploads.collegeIdCard?.url || null,
+            marksheetsParam,
+            req.user.id,
+          ],
+        }
       );
 
       const updatedUser = await resolveNeonUser(req.user);

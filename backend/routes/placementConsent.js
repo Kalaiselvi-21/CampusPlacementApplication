@@ -1,12 +1,12 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const { auth } = require('../middleware/auth');
 const { sendOTPEmail } = require('../services/emailService');
 const logger = require('../services/database/logger');
 const neonService = require('../services/database/neonService');
+const { uploadMulterFileToS3 } = require("../services/storage/s3Upload");
 
 const router = express.Router();
 
@@ -15,24 +15,7 @@ const isStudentOrPR = (user) => {
   return normalized === 'student' || normalized === 'placement_representative' || normalized === 'pr';
 };
 
-// Ensure upload directories exist
-const ensureDirectoryExists = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-};
-
-// Configure multer for signature upload
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadPath = path.join(__dirname, '../uploads/signatures/');
-    ensureDirectoryExists(uploadPath);
-    cb(null, uploadPath);
-  },
-  filename: function (req, file, cb) {
-    cb(null, `signature_${req.user.id}_${Date.now()}${path.extname(file.originalname)}`);
-  }
-});
+const storage = multer.memoryStorage();
 
 const upload = multer({ 
   storage: storage,
@@ -144,6 +127,11 @@ router.post('/consent', auth, upload.single('signature'), async (req, res) => {
       return res.status(400).json({ message: 'Signature file is required' });
     }
 
+    const signatureUpload = await uploadMulterFileToS3(req.file, {
+      prefix: "signatures",
+      keyPrefix: `${req.user.id}`,
+    });
+
     // Generate OTP for verification (6-digit)
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpires = new Date(Date.now() + 2 * 60 * 1000); // 2 minutes
@@ -157,7 +145,7 @@ router.post('/consent', auth, upload.single('signature'), async (req, res) => {
       // Save consent to NeonDB
       await neonService.submitPlacementConsent(req.user.id, {
         hasAgreed: true,
-        signature: req.file.filename,
+        signature: signatureUpload.url,
         ipAddress: req.ip,
         userAgent: req.get('User-Agent')
       });

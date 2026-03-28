@@ -5,6 +5,8 @@ const { requireCompleteProfile } = require("../middleware/profileComplete");
 const { emitJobDriveUpdate } = require("../utils/socketUtils");
 const logger = require("../services/database/logger");
 const neonService = require("../services/database/neonService");
+const notificationService = require("../services/notifications/notificationService");
+const fileNotificationService = require("../services/notifications/fileNotificationService");
 const { sequelize } = require("../config/neonConnection");
 
 const router = express.Router();
@@ -459,6 +461,89 @@ router.post("/", auth, authorizePO, async (req, res) => {
     const io = req.app.get("io");
     emitJobDriveUpdate(io, "created", drive);
 
+    try {
+      const departments =
+        Array.isArray(payload?.eligibility?.allowedDepartments) && payload.eligibility.allowedDepartments.length > 0
+          ? payload.eligibility.allowedDepartments
+          : ["ALL"];
+
+      const deadlineDate = payload.deadline ? String(payload.deadline).slice(0, 10) : "N/A";
+      const deadlineTime = payload.applicationDeadlineTime ? String(payload.applicationDeadlineTime).trim() : "";
+      const deadline = deadlineTime && deadlineDate !== "N/A" ? `${deadlineDate} ${deadlineTime}` : deadlineDate;
+      const rounds = Array.isArray(payload.selectionRounds) ? payload.selectionRounds : [];
+      const roundLines = rounds
+        .slice(0, 3)
+        .map((round, idx) => {
+          const name = round?.name || `Round ${idx + 1}`;
+          const end = round?.date ? String(round.date).slice(0, 10) : "N/A";
+          return `${name} ends: ${end}`;
+        })
+        .join("\n");
+
+      const title = `New Drive: ${payload.companyName} - ${payload.role}`;
+      const message = [title, `Apply before: ${deadline}`, roundLines || ""].filter(Boolean).join("\n");
+
+      await notificationService.createForDepartments({
+        departments,
+        roles: ["student", "placement_representative", "pr"],
+        type: "drive_created",
+        title,
+        message,
+        metadata: {
+          driveId: String(drive?.id || drive?._id || ""),
+          companyName: payload.companyName,
+          jobRole: payload.role,
+          applicationDeadline: payload.deadline || null,
+          applicationDeadlineTime: payload.applicationDeadlineTime || null,
+          selectionRounds: payload.selectionRounds || [],
+        },
+      });
+
+      if (io) {
+        if (departments.includes("ALL")) {
+          io.to("student").emit("notification:new", { type: "drive_created" });
+          io.to("placement_representative").emit("notification:new", { type: "drive_created" });
+          io.to("pr").emit("notification:new", { type: "drive_created" });
+        } else {
+          departments.forEach((dept) => io.to(`dept:${dept}`).emit("notification:new", { type: "drive_created" }));
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create drive notification:", notifyError?.message || notifyError);
+    }
+
+    // If PO selected an SPOC department on drive creation, notify PRs from that department explicitly.
+    try {
+      const spocDept = payload?.spocDept ? String(payload.spocDept).trim() : "";
+      if (spocDept) {
+        const title = "Placement Officer assigned SPOC department";
+        const message = `Your department (${spocDept}) is selected as SPOC for ${payload.companyName || "this drive"}${
+          payload.role ? ` – ${payload.role}` : ""
+        }.`;
+
+        await notificationService.createForDepartments({
+          departments: [spocDept],
+          roles: ["placement_representative", "pr"],
+          type: "spoc_assignment",
+          title,
+          message,
+          metadata: {
+            driveId: String(drive?.id || drive?._id || ""),
+            company: payload.companyName,
+            role: payload.role,
+            spoc_department: spocDept,
+            drive_name: [payload.companyName, payload.role].filter(Boolean).join(" - "),
+          },
+        });
+
+        if (io) {
+          io.to(`dept:${spocDept}`).emit("notification:new", { type: "spoc_assignment" });
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create SPOC assignment notification:", notifyError?.message || notifyError);
+    }
+
     return res.status(201).json({
       message: "Job drive created successfully",
       jobDrive: formatDriveForDisplay(drive),
@@ -475,6 +560,124 @@ router.get("/", auth, async (req, res) => {
   try {
     const query = req.user.role === "student" ? { isActive: true } : {};
     const drives = await neonService.findAllJobDrives(query);
+
+    // Auto-finalize ended drives (PO/Admin only): persist final-round selections as placed_students
+    // and notify placed students with placement_success.
+    try {
+      const role = req.user.roleNormalized || req.user.role;
+      const normalizedRole = normalizeRole(role);
+      const isPOOrAdmin = isPlacementOfficerRole(role) || normalizedRole === "admin";
+      const isPR = isPlacementRepresentativeRole(role);
+      const canAutoFinalize = isPOOrAdmin || isPR;
+      const io = req.app.get("io");
+
+      const hasEndedByTime = (drive) => {
+        if (drive?.isActive === false) return true;
+        if (!drive?.date) return false;
+        const driveDate = new Date(drive.date);
+        if (Number.isNaN(driveDate.getTime())) return false;
+
+        if (drive.time) {
+          const [hours, minutes] = String(drive.time).split(":").map((v) => parseInt(v, 10));
+          driveDate.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+        } else {
+          driveDate.setHours(23, 59, 59, 999);
+        }
+
+        return new Date() > driveDate;
+      };
+
+      if (canAutoFinalize) {
+        for (const drive of drives) {
+          if (!hasEndedByTime(drive)) continue;
+
+          // PRs can only auto-finalize drives they can manage (same dept / SPOC rules).
+          if (isPR && !(await canManageDrive(req.user, drive))) continue;
+
+          const alreadyPlaced = Array.isArray(drive?.placedStudents) && drive.placedStudents.length > 0;
+          const rounds = Array.isArray(drive?.selectionRounds) ? drive.selectionRounds : [];
+          const lastRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+          const selectedIds = Array.isArray(lastRound?.selectedStudents)
+            ? lastRound.selectedStudents.filter((id) => isUuid(id))
+            : [];
+
+          if (alreadyPlaced || selectedIds.length === 0) continue;
+
+          const profiles = await fetchStudentProfilesByIds(selectedIds);
+          const placedStudents = selectedIds
+            .map((studentId) => {
+              const profile = profiles.get(studentId);
+              if (!profile) return null;
+
+              return {
+                studentId,
+                name: profile.name,
+                rollNumber: profile.rollNumber,
+                department: profile.department,
+                email: profile.email,
+                mobileNumber: profile.mobileNumber,
+                cgpa: profile.cgpa === "N/A" ? 0 : profile.cgpa,
+                addedBy: req.user.id,
+                addedAt: new Date(),
+                status: "placed",
+              };
+            })
+            .filter(Boolean);
+
+          if (placedStudents.length === 0) continue;
+
+          const updated = await neonService.updateJobDrive(drive.id || drive._id, {
+            placedStudents,
+            addedBy: req.user.id,
+          });
+
+          // Update in-memory drive so response includes placedStudents count immediately.
+          drive.placedStudents = updated?.placedStudents || placedStudents;
+          drive.placementFinalized = Array.isArray(drive.placedStudents) && drive.placedStudents.length > 0;
+
+          const title = `You have been placed in ${drive.companyName || "the company"}`;
+          const joiningDetails = [
+            drive.date ? `Drive Date: ${String(drive.date).slice(0, 10)}` : "",
+            drive.time ? `Time: ${drive.time}` : "",
+            drive.venue ? `Venue: ${drive.venue}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const ctcLine = drive.ctc ? `CTC: ${drive.ctc}` : "CTC: Will be shared by placement office";
+          const message = [
+            `You have been placed in ${drive.companyName || "the company"}${drive.role ? ` for ${drive.role}` : ""}.`,
+            ctcLine,
+            joiningDetails ? `\nJoining details:\n${joiningDetails}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const placedIds = placedStudents.map((p) => p.studentId).filter((id) => isUuid(id));
+          await notificationService.createPlacementSuccessForUserIdsIfMissing({
+            userIds: placedIds,
+            driveId: String(drive?.id || drive?._id || ""),
+            title,
+            message,
+            metadata: {
+              driveId: String(drive?.id || drive?._id || ""),
+              company: drive.companyName,
+              role: drive.role,
+              package: drive.ctc || null,
+              drive_name: [drive.companyName, drive.role].filter(Boolean).join(" - "),
+              joining_details: joiningDetails || null,
+            },
+          });
+
+          if (io) {
+            placedIds.forEach((id) => io.to(`user:${id}`).emit("notification:new", { type: "placement_success" }));
+          }
+        }
+      }
+    } catch (autoFinalizeError) {
+      console.error("Auto-finalize ended drives failed:", autoFinalizeError?.message || autoFinalizeError);
+    }
+
     const processedDrives = drives.map((drive) => formatDriveForDisplay(drive));
 
     return res.json({
@@ -950,6 +1153,53 @@ router.post("/:id/finalize-placement", auth, authorizeSameDepartmentPR, async (r
     const io = req.app.get("io");
     emitJobDriveUpdate(io, "placement_finalized", updatedDrive);
 
+    try {
+      const placedIds = placedStudents.map((p) => p.studentId).filter((id) => isUuid(id));
+      if (placedIds.length > 0) {
+        const title = `You have been placed in ${drive.companyName || "the company"}`;
+        const joiningDetails = [
+          drive.date ? `Drive Date: ${String(drive.date).slice(0, 10)}` : "",
+          drive.time ? `Time: ${drive.time}` : "",
+          drive.venue ? `Venue: ${drive.venue}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        const ctcLine = drive.ctc ? `CTC: ${drive.ctc}` : "CTC: Will be shared by placement office";
+        const message = [
+          `You have been placed in ${drive.companyName || "the company"}${drive.role ? ` for ${drive.role}` : ""}.`,
+          ctcLine,
+          joiningDetails ? `\nJoining details:\n${joiningDetails}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        await notificationService.createForUserIds({
+          userIds: placedIds,
+          type: "placement_success",
+          title,
+          message,
+          metadata: {
+            driveId: String(drive?.id || drive?._id || req.params.id),
+            company: drive.companyName,
+            role: drive.role,
+            package: drive.ctc || null,
+            drive_name: [drive.companyName, drive.role].filter(Boolean).join(" - "),
+            joining_details: joiningDetails || null,
+            notified_at: new Date().toISOString(),
+          },
+        });
+
+        if (io) {
+          placedIds.forEach((id) =>
+            io.to(`user:${id}`).emit("notification:new", { type: "placement_success" })
+          );
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create placed notifications:", notifyError?.message || notifyError);
+    }
+
     return res.json({
       message: `Successfully finalized placement for ${placedStudents.length} students`,
       placedStudents,
@@ -1071,6 +1321,70 @@ router.post("/:id/rounds/:roundIndex/select-students", auth, authorizeSameDepart
     const io = req.app.get("io");
     emitJobDriveUpdate(io, "students_selected", updatedDrive);
 
+    try {
+      const prevSelected = Array.isArray(drive.selectionRounds?.[roundIndex]?.selectedStudents)
+        ? drive.selectionRounds[roundIndex].selectedStudents
+        : [];
+      const newlySelected = studentIds.filter((id) => !prevSelected.includes(id));
+
+      if (newlySelected.length > 0) {
+        const rounds = Array.isArray(updatedDrive.selectionRounds) ? updatedDrive.selectionRounds : [];
+        const totalRounds = rounds.length;
+        const currentRoundNumber = roundIndex + 1;
+        const isFinalRound = totalRounds > 0 && currentRoundNumber >= totalRounds;
+
+        const nextRoundNumber = currentRoundNumber + 1;
+        const nextRound = !isFinalRound ? rounds[roundIndex + 1] : null;
+        const nextDeadline = nextRound?.date ? String(nextRound.date).slice(0, 10) : null;
+        const instructions = nextRound?.details || "";
+
+        const company = drive.companyName || "Drive";
+        const jobRole = drive.role || "";
+
+        const type = isFinalRound ? "final_round_cleared" : "round_selected";
+        const title = isFinalRound
+          ? `You have cleared the final round – ${company}`
+          : `You are selected for Round ${nextRoundNumber} – ${company}`;
+
+        const message = isFinalRound
+          ? [
+              `You have successfully cleared the final round${company ? ` – ${company}` : ""}.`,
+              "Final placement confirmation will be announced after drive completion.",
+            ].join("\n")
+          : [
+              company ? `Company: ${company}` : "",
+              jobRole ? `Job Role: ${jobRole}` : "",
+              `Next round: ${nextRoundNumber}`,
+              nextDeadline ? `Next round deadline: ${nextDeadline}` : "",
+              instructions ? `Round instructions:\n${instructions}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+        await notificationService.createForUserIds({
+          userIds: newlySelected,
+          type,
+          title,
+          message,
+          metadata: {
+            driveId: String(drive?.id || drive?._id || req.params.id),
+            company,
+            role: jobRole || null,
+            round: isFinalRound ? totalRounds : nextRoundNumber,
+            next_round_deadline: nextDeadline,
+            round_instructions: instructions || null,
+            drive_name: [company, jobRole].filter(Boolean).join(" - "),
+          },
+        });
+
+        if (io) {
+          newlySelected.forEach((id) => io.to(`user:${id}`).emit("notification:new", { type }));
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create round selection notifications:", notifyError?.message || notifyError);
+    }
+
     return res.json({
       message: "Students selected successfully",
       selectionRounds: updatedDrive.selectionRounds,
@@ -1103,6 +1417,68 @@ router.patch("/:id/rounds/:roundIndex/complete", auth, async (req, res) => {
     const updatedDrive = await neonService.updateJobDrive(req.params.id, { selectionRounds: nextRounds });
     const io = req.app.get("io");
     emitJobDriveUpdate(io, "round_completed", updatedDrive);
+
+    try {
+      const totalRounds = Array.isArray(updatedDrive?.selectionRounds)
+        ? updatedDrive.selectionRounds.length
+        : 0;
+      const isFinalRound = totalRounds > 0 && roundIndex === totalRounds - 1;
+
+      if (isFinalRound) {
+        const finalRound = updatedDrive.selectionRounds[roundIndex] || {};
+        const placedIds = Array.isArray(finalRound.selectedStudents)
+          ? finalRound.selectedStudents.filter((id) => isUuid(id))
+          : [];
+
+        if (placedIds.length > 0) {
+          const title = `You have been placed in ${updatedDrive.companyName || "the company"}`;
+          const joiningDetails = [
+            updatedDrive.date ? `Drive Date: ${String(updatedDrive.date).slice(0, 10)}` : "",
+            updatedDrive.time ? `Time: ${updatedDrive.time}` : "",
+            updatedDrive.venue ? `Venue: ${updatedDrive.venue}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const ctcLine = updatedDrive.ctc
+            ? `CTC: ${updatedDrive.ctc}`
+            : "CTC: Will be shared by placement office";
+
+          const message = [
+            `You have been placed in ${updatedDrive.companyName || "the company"}${
+              updatedDrive.role ? ` for ${updatedDrive.role}` : ""
+            }.`,
+            ctcLine,
+            joiningDetails ? `\nJoining details:\n${joiningDetails}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          await notificationService.createPlacementSuccessForUserIdsIfMissing({
+            userIds: placedIds,
+            driveId: String(updatedDrive?.id || updatedDrive?._id || req.params.id),
+            title,
+            message,
+            metadata: {
+              driveId: String(updatedDrive?.id || updatedDrive?._id || req.params.id),
+              company: updatedDrive.companyName,
+              role: updatedDrive.role,
+              package: updatedDrive.ctc || null,
+              drive_name: [updatedDrive.companyName, updatedDrive.role].filter(Boolean).join(" - "),
+              joining_details: joiningDetails || null,
+            },
+          });
+
+          if (io) {
+            placedIds.forEach((id) =>
+              io.to(`user:${id}`).emit("notification:new", { type: "placement_success" })
+            );
+          }
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create placement notifications on round completion:", notifyError?.message || notifyError);
+    }
 
     return res.json({
       message: "Round completed successfully",
@@ -1207,9 +1583,111 @@ router.get("/:id/last-round-students", auth, async (req, res) => {
       return res.json({ students: [], database: "NEON" });
     }
 
+    const role = req.user.roleNormalized || req.user.role;
+    const canFinalizePlacement =
+      isPlacementOfficerRole(role) ||
+      normalizeRole(role) === "admin" ||
+      (isPlacementRepresentativeRole(role) && (await canManageDrive(req.user, drive)));
+
+    const driveEnded = (() => {
+      if (drive?.isActive === false) return true;
+      if (!drive?.date) return false;
+      const driveDate = new Date(drive.date);
+      if (Number.isNaN(driveDate.getTime())) return false;
+
+      if (drive.time) {
+        const [hours, minutes] = String(drive.time).split(":").map((v) => parseInt(v, 10));
+        driveDate.setHours(Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0, 0, 0);
+      } else {
+        driveDate.setHours(23, 59, 59, 999);
+      }
+
+      return new Date() > driveDate;
+    })();
+
     const lastRound = drive.selectionRounds[drive.selectionRounds.length - 1];
-    const profiles = await fetchStudentProfilesByIds(lastRound.selectedStudents || []);
-    const students = (lastRound.selectedStudents || [])
+    const selectedIds = Array.isArray(lastRound.selectedStudents) ? lastRound.selectedStudents.filter((id) => isUuid(id)) : [];
+    const profiles = await fetchStudentProfilesByIds(selectedIds);
+
+    // If the drive has ended, automatically persist final-round selected students as placed (if not already)
+    // and send placement_success notifications to those students.
+    if (driveEnded && canFinalizePlacement) {
+      const alreadyPlaced = Array.isArray(drive?.placedStudents) && drive.placedStudents.length > 0;
+
+      if (!alreadyPlaced && selectedIds.length > 0) {
+        const placedStudents = selectedIds
+          .map((studentId) => {
+            const profile = profiles.get(studentId);
+            if (!profile) return null;
+
+            return {
+              studentId,
+              name: profile.name,
+              rollNumber: profile.rollNumber,
+              department: profile.department,
+              email: profile.email,
+              mobileNumber: profile.mobileNumber,
+              cgpa: profile.cgpa === "N/A" ? 0 : profile.cgpa,
+              addedBy: req.user.id,
+              addedAt: new Date(),
+              status: "placed",
+            };
+          })
+          .filter(Boolean);
+
+        if (placedStudents.length > 0) {
+          await neonService.updateJobDrive(req.params.id, {
+            placedStudents,
+            addedBy: req.user.id,
+          });
+
+          try {
+            const title = `You have been placed in ${drive.companyName || "the company"}`;
+            const joiningDetails = [
+              drive.date ? `Drive Date: ${String(drive.date).slice(0, 10)}` : "",
+              drive.time ? `Time: ${drive.time}` : "",
+              drive.venue ? `Venue: ${drive.venue}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+            const ctcLine = drive.ctc ? `CTC: ${drive.ctc}` : "CTC: Will be shared by placement office";
+            const message = [
+              `You have been placed in ${drive.companyName || "the company"}${drive.role ? ` for ${drive.role}` : ""}.`,
+              ctcLine,
+              joiningDetails ? `\nJoining details:\n${joiningDetails}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n");
+
+            const placedIds = placedStudents.map((p) => p.studentId).filter((id) => isUuid(id));
+            await notificationService.createPlacementSuccessForUserIdsIfMissing({
+              userIds: placedIds,
+              driveId: String(drive?.id || drive?._id || req.params.id),
+              title,
+              message,
+              metadata: {
+                driveId: String(drive?.id || drive?._id || req.params.id),
+                company: drive.companyName,
+                role: drive.role,
+                package: drive.ctc || null,
+                drive_name: [drive.companyName, drive.role].filter(Boolean).join(" - "),
+                joining_details: joiningDetails || null,
+              },
+            });
+
+            const io = req.app.get("io");
+            if (io) {
+              placedIds.forEach((id) => io.to(`user:${id}`).emit("notification:new", { type: "placement_success" }));
+            }
+          } catch (notifyError) {
+            console.error("Failed to create placement notifications for ended drive:", notifyError?.message || notifyError);
+          }
+        }
+      }
+    }
+
+    const students = selectedIds
       .map((studentId) => profiles.get(studentId))
       .filter(Boolean)
       .map((student) => ({
@@ -1312,9 +1790,186 @@ router.put("/:id", auth, async (req, res) => {
       return res.status(400).json({ message: validationError });
     }
 
-    const updatedDrive = await neonService.updateJobDrive(req.params.id, nextBody);
+    const prevSpocDept = drive.spocDept || "";
+    const nextSpocDept = nextBody.spocDept ? String(nextBody.spocDept) : "";
+
+    let updatedDrive = await neonService.updateJobDrive(req.params.id, nextBody);
     const io = req.app.get("io");
     emitJobDriveUpdate(io, "updated", updatedDrive);
+
+    try {
+      const normalizedRole = normalizeRole(role);
+      const canAssignSpoc = isPlacementOfficerRole(normalizedRole) || normalizedRole === "admin";
+      if (canAssignSpoc && nextSpocDept && nextSpocDept !== prevSpocDept) {
+        const title = "Placement Officer assigned SPOC department";
+        const message = `Your department (${nextSpocDept}) is selected as SPOC for ${drive.companyName || "this drive"}${
+          drive.role ? ` – ${drive.role}` : ""
+        }.`;
+
+        await notificationService.createForDepartments({
+          departments: [nextSpocDept],
+          roles: ["placement_representative", "pr"],
+          type: "spoc_assignment",
+          title,
+          message,
+          metadata: {
+            driveId: String(drive?.id || drive?._id || req.params.id),
+            company: drive.companyName,
+            role: drive.role,
+            spoc_department: nextSpocDept,
+            drive_name: [drive.companyName, drive.role].filter(Boolean).join(" - "),
+          },
+        });
+
+        if (io) {
+          io.to(`dept:${nextSpocDept}`).emit("notification:new", { type: "spoc_assignment" });
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create SPOC notifications:", notifyError?.message || notifyError);
+    }
+
+    // If the drive was just marked completed, notify placed students for this drive.
+    try {
+      const prevStatus = String(drive?.status || "").trim().toLowerCase();
+      const nextStatus = String(updatedDrive?.status || "").trim().toLowerCase();
+
+      const wasActive = Boolean(drive?.isActive);
+      const isActive = Boolean(updatedDrive?.isActive);
+
+      const completedNow =
+        (wasActive && !isActive) || (prevStatus !== "completed" && nextStatus === "completed");
+
+      if (completedNow) {
+        try {
+          await fileNotificationService.onDriveComplete({
+            driveId: req.params.id,
+            io,
+          });
+        } catch (fileNotifyError) {
+          console.error("Drive completion file-notification hook failed:", fileNotifyError?.message || fileNotifyError);
+        }
+
+        const alreadyPlaced =
+          Array.isArray(updatedDrive?.placedStudents) && updatedDrive.placedStudents.length > 0;
+
+        if (!alreadyPlaced) {
+          const rounds = Array.isArray(updatedDrive?.selectionRounds) ? updatedDrive.selectionRounds : [];
+          const finalRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+          const finalSelectedIds = Array.isArray(finalRound?.selectedStudents)
+            ? finalRound.selectedStudents.filter((id) => isUuid(id))
+            : [];
+
+          if (finalSelectedIds.length > 0) {
+            const profiles = await fetchStudentProfilesByIds(finalSelectedIds);
+            const autoPlacedStudents = finalSelectedIds
+              .map((studentId) => {
+                const profile = profiles.get(studentId);
+                if (!profile) return null;
+
+                return {
+                  studentId,
+                  name: profile.name,
+                  rollNumber: profile.rollNumber,
+                  department: profile.department,
+                  email: profile.email,
+                  mobileNumber: profile.mobileNumber,
+                  cgpa: profile.cgpa === "N/A" ? 0 : profile.cgpa,
+                  addedBy: req.user.id,
+                  addedAt: new Date(),
+                  status: "placed",
+                };
+              })
+              .filter(Boolean);
+
+            if (autoPlacedStudents.length > 0) {
+              updatedDrive = await neonService.updateJobDrive(req.params.id, {
+                placedStudents: autoPlacedStudents,
+                addedBy: req.user.id,
+              });
+            }
+          }
+        }
+
+        let placedIds = Array.isArray(updatedDrive?.placedStudents)
+          ? updatedDrive.placedStudents.map((p) => p?.studentId).filter((id) => isUuid(id))
+          : [];
+
+        // Fallback: some schema variants may not persist placed_students.student_id.
+        // Recover target users from final-round selections or placed-student emails.
+        if (placedIds.length === 0) {
+          const rounds = Array.isArray(updatedDrive?.selectionRounds) ? updatedDrive.selectionRounds : [];
+          const finalRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+          const finalSelectedIds = Array.isArray(finalRound?.selectedStudents)
+            ? finalRound.selectedStudents.filter((id) => isUuid(id))
+            : [];
+
+          if (finalSelectedIds.length > 0) {
+            placedIds = finalSelectedIds;
+          } else {
+            const placedEmails = Array.isArray(updatedDrive?.placedStudents)
+              ? updatedDrive.placedStudents
+                  .map((p) => String(p?.email || "").trim().toLowerCase())
+                  .filter(Boolean)
+              : [];
+
+            if (placedEmails.length > 0) {
+              const userRows = await neonService.executeRawQuery(
+                `SELECT id FROM users WHERE LOWER(email) = ANY($1)`,
+                [placedEmails]
+              );
+              placedIds = userRows.map((row) => row.id).filter((id) => isUuid(id));
+            }
+          }
+        }
+
+        if (placedIds.length > 0) {
+          const title = `You have been placed in ${updatedDrive.companyName || "the company"}`;
+          const joiningDetails = [
+            updatedDrive.date ? `Drive Date: ${String(updatedDrive.date).slice(0, 10)}` : "",
+            updatedDrive.time ? `Time: ${updatedDrive.time}` : "",
+            updatedDrive.venue ? `Venue: ${updatedDrive.venue}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const ctcLine = updatedDrive.ctc ? `CTC: ${updatedDrive.ctc}` : "CTC: Will be shared by placement office";
+          const message = [
+            `You have been placed in ${updatedDrive.companyName || "the company"}${
+              updatedDrive.role ? ` for ${updatedDrive.role}` : ""
+            }.`,
+            ctcLine,
+            joiningDetails ? `\nJoining details:\n${joiningDetails}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          await notificationService.createForUserIds({
+            userIds: placedIds,
+            type: "placement_success",
+            title,
+            message,
+            metadata: {
+              driveId: String(updatedDrive?.id || updatedDrive?._id || req.params.id),
+              company: updatedDrive.companyName,
+              role: updatedDrive.role,
+              package: updatedDrive.ctc || null,
+              drive_name: [updatedDrive.companyName, updatedDrive.role].filter(Boolean).join(" - "),
+              joining_details: joiningDetails || null,
+              notified_at: new Date().toISOString(),
+            },
+          });
+
+          if (io) {
+            placedIds.forEach((id) =>
+              io.to(`user:${id}`).emit("notification:new", { type: "placement_success" })
+            );
+          }
+        }
+      }
+    } catch (notifyError) {
+      console.error("Failed to create placement completion notifications:", notifyError?.message || notifyError);
+    }
 
     return res.json({
       message: "Job drive updated successfully",

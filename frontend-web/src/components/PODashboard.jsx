@@ -14,7 +14,7 @@ import {
 const API_BASE = process.env.REACT_APP_API_BASE;
 
 const PODashboard = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalDrives: 0,
@@ -34,9 +34,28 @@ const PODashboard = () => {
     pending: 0,
     recentPending: [],
   });
+
+  // Box File Upload Settings
+  const [boxFileUploadEnabled, setBoxFileUploadEnabled] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+
+  // Template Modal States
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateFiles, setTemplateFiles] = useState({
+    spoc: null,
+    expenditure: null,
+    box: null,
+  });
+  const [existingTemplates, setExistingTemplates] = useState(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
+
   // Deletion modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showApplicationsModal, setShowApplicationsModal] = useState(false);
+  const [applicationsLoading, setApplicationsLoading] = useState(false);
+  const [selectedDriveName, setSelectedDriveName] = useState("");
+  const [selectedApplicants, setSelectedApplicants] = useState([]);
 
   // Socket connection and real-time updates
   useSocketConnection(user?.role);
@@ -105,10 +124,20 @@ const PODashboard = () => {
   };
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      navigate("/login");
+    }
+  }, [authLoading, user, navigate]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
     fetchStats();
     fetchAllDrives();
     fetchAllowlistSummary();
-  }, []);
+    fetchSettings();
+  }, [authLoading, user]);
 
   const fetchAllowlistSummary = async () => {
     try {
@@ -132,6 +161,122 @@ const PODashboard = () => {
     } catch (error) {
       console.error("Error fetching allowlist summary:", error);
     }
+  };
+
+  // ✅ ADDED
+  const fetchSettings = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/box-files/toggle-status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setBoxFileUploadEnabled(Boolean(response.data?.enabled));
+    } catch (error) {
+      console.error("Error fetching box file settings:", error);
+    }
+  };
+
+  // ✅ ADDED
+  const handleToggleUpload = async () => {
+    setSettingsLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const nextEnabled = !boxFileUploadEnabled;
+      await axios.post(
+        `${API_BASE}/api/box-files/toggle`,
+        { enabled: nextEnabled },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setBoxFileUploadEnabled(nextEnabled);
+      toast.success(`Box file upload ${nextEnabled ? "enabled" : "disabled"}`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to update box file setting");
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  // ✅ ADDED
+  const fetchTemplates = async () => {
+    setTemplateLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/templates/latest`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setExistingTemplates(response.data?.templates || null);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      toast.error("Failed to fetch templates");
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
+  // ✅ ADDED
+  const handleTemplateFileChange = (e, type) => {
+    const file = e.target.files?.[0] || null;
+    setTemplateFiles((prev) => ({ ...prev, [type]: file }));
+  };
+
+  // ✅ ADDED
+  const handleUploadTemplates = async (e) => {
+    e.preventDefault();
+    const { spoc, expenditure, box } = templateFiles;
+
+    if (!spoc && !expenditure && !box) {
+      toast.error("Please select at least one file to upload.");
+      return;
+    }
+
+    const formData = new FormData();
+    if (spoc) formData.append("spoc", spoc);
+    if (expenditure) formData.append("expenditure", expenditure);
+    if (box) formData.append("box", box);
+
+    setTemplateLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      await axios.post(`${API_BASE}/api/templates/upload`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      toast.success("Templates uploaded successfully");
+      setTemplateFiles({ spoc: null, expenditure: null, box: null });
+      await fetchTemplates();
+    } catch (error) {
+      console.error("Template upload error:", error);
+      toast.error(error.response?.data?.message || "Failed to upload templates");
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
+  // ✅ ADDED
+  const handleDownloadFile = async (fileUrl, fileName) => {
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("Failed to download file");
+    }
+  };
+
+  // ✅ ADDED
+  const openTemplateModal = () => {
+    setShowTemplateModal(true);
+    fetchTemplates();
   };
 
   const fetchStats = async () => {
@@ -345,6 +490,92 @@ const PODashboard = () => {
   const cancelDeleteDrive = () => {
     setShowDeleteModal(false);
     setDeleteTarget(null);
+  };
+
+  const fetchJobDriveStudents = async (jobDriveId, companyName) => {
+    try {
+      setApplicationsLoading(true);
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        `${API_BASE}/api/job-drives/${jobDriveId}/students`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const applicants = Array.isArray(response.data?.students)
+        ? response.data.students
+        : [];
+      setSelectedApplicants(applicants);
+      setSelectedDriveName(companyName);
+      setShowApplicationsModal(true);
+    } catch (error) {
+      console.error("Error fetching job drive students:", error);
+      toast.error("Failed to fetch student applications");
+    } finally {
+      setApplicationsLoading(false);
+    }
+  };
+
+  const downloadApplicantsCSV = () => {
+    if (!selectedApplicants?.length) {
+      toast.error("No data to download");
+      return;
+    }
+
+    const headers = [
+      "S.No",
+      "Name",
+      "Roll Number",
+      "Department",
+      "Email",
+      "CGPA",
+      "Mobile",
+      "Applied On",
+    ];
+
+    const csvContent = [
+      headers.join(","),
+      ...selectedApplicants.map((student, index) =>
+        [
+          index + 1,
+          `"${student.name || student.profile?.name || "N/A"}"`,
+          `"${student.rollNumber || student.profile?.rollNumber || "N/A"}"`,
+          `"${student.department || student.profile?.department || "N/A"}"`,
+          `"${student.email || "N/A"}"`,
+          `"${student.cgpa || student.profile?.cgpa || "N/A"}"`,
+          `"${
+            student.phoneNumber ||
+            student.phone ||
+            student.mobileNumber ||
+            student.profile?.mobileNumber ||
+            student.profile?.phoneNumber ||
+            "N/A"
+          }"`,
+          `"${
+            student.appliedAt
+              ? new Date(student.appliedAt).toLocaleDateString()
+              : "N/A"
+          }"`,
+        ].join(",")
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `${selectedDriveName || "job_drive"}_applied_students.csv`
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Add function to fetch students details
@@ -679,8 +910,46 @@ const PODashboard = () => {
           </div>
         </div>
 
+        {/* ✅ ADDED: Box File Management */}
+        <div className="bg-white shadow rounded-lg mb-8">
+          <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900">Box File Management</h2>
+              <p className="text-sm text-gray-600">Control PR box file uploads and view the board</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Enable Box File Upload:</span>
+                <button
+                  onClick={handleToggleUpload}
+                  disabled={settingsLoading}
+                  className={`${boxFileUploadEnabled ? "bg-green-600" : "bg-gray-400"} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-60`}
+                >
+                  <span
+                    className={`${boxFileUploadEnabled ? "translate-x-5" : "translate-x-0"} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                  />
+                </button>
+              </div>
+              <button
+                onClick={() => navigate("/box-file-board")}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Box File Board
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div
+            onClick={openTemplateModal}
+            className="bg-teal-600 text-white p-6 rounded-lg hover:bg-teal-700 transition-colors cursor-pointer"
+          >
+            <h3 className="text-lg font-semibold mb-2">Upload Templates</h3>
+            <p className="text-teal-100">Manage and upload placement templates</p>
+          </div>
+
           <Link
             to="/pr-create-job"
             className="bg-blue-600 text-white p-6 rounded-lg hover:bg-blue-700 transition-colors"
@@ -738,6 +1007,17 @@ const PODashboard = () => {
               className="mt-4 text-purple-600 hover:text-purple-800 font-medium"
             >
               View Analytics →
+            </button>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">All Drive Files</h3>
+            <p className="text-gray-600">View SPOC & Expenditure files for all drives</p>
+            <button
+              onClick={() => navigate("/job-drive-files")}
+              className="mt-4 text-blue-600 hover:text-blue-800 font-medium"
+            >
+              View All Files →
             </button>
           </div>
         </div>
@@ -869,6 +1149,17 @@ const PODashboard = () => {
                       </div>
                       <div className="ml-4 flex space-x-2">
                         <button
+                          onClick={() =>
+                            fetchJobDriveStudents(
+                              drive._id || drive.id,
+                              drive.companyName
+                            )
+                          }
+                          className="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200"
+                        >
+                          View Applications
+                        </button>
+                        <button
                           onClick={() => handleDeleteDrive(drive._id || drive.id)}
                           className="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
                         >
@@ -882,6 +1173,102 @@ const PODashboard = () => {
             )}
           </div>
         </div>
+
+        {/* Drive Applications Modal */}
+        {showApplicationsModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-5xl w-full max-h-[85vh] overflow-hidden">
+              <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">
+                  Students Applied - {selectedDriveName}
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowApplicationsModal(false);
+                    setSelectedApplicants([]);
+                    setSelectedDriveName("");
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto max-h-[60vh]">
+                {applicationsLoading ? (
+                  <div className="text-center py-8 text-gray-500">
+                    Loading applicants...
+                  </div>
+                ) : selectedApplicants.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No students have applied for this drive yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">S.No</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Roll Number</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">CGPA</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mobile</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Applied On</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {selectedApplicants.map((student, index) => (
+                          <tr key={student._id || index} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm">{index + 1}</td>
+                            <td className="px-4 py-3 text-sm font-medium">{student.name || student.profile?.name || "N/A"}</td>
+                            <td className="px-4 py-3 text-sm">{student.rollNumber || student.profile?.rollNumber || "N/A"}</td>
+                            <td className="px-4 py-3 text-sm">{student.department || student.profile?.department || "N/A"}</td>
+                            <td className="px-4 py-3 text-sm">{student.email || "N/A"}</td>
+                            <td className="px-4 py-3 text-sm">{student.cgpa || student.profile?.cgpa || "N/A"}</td>
+                            <td className="px-4 py-3 text-sm">
+                              {student.phoneNumber ||
+                                student.phone ||
+                                student.mobileNumber ||
+                                student.profile?.mobileNumber ||
+                                student.profile?.phoneNumber ||
+                                "N/A"}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {student.appliedAt
+                                ? new Date(student.appliedAt).toLocaleDateString()
+                                : "N/A"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 flex justify-between">
+                <button
+                  onClick={downloadApplicantsCSV}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                >
+                  Download CSV
+                </button>
+                <button
+                  onClick={() => {
+                    setShowApplicationsModal(false);
+                    setSelectedApplicants([]);
+                    setSelectedDriveName("");
+                  }}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Students Details Modal */}
         {showStudentsModal && (
@@ -1059,6 +1446,119 @@ const PODashboard = () => {
           </div>
         )}
       </div>
+
+      {/* ✅ ADDED: Template Management Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-900">Manage Placement Templates</h3>
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6">
+              <form onSubmit={handleUploadTemplates} className="mb-8 bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <h4 className="text-lg font-semibold mb-4 text-gray-800">Update Templates</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">SPOC File</label>
+                    <input
+                      type="file"
+                      onChange={(e) => handleTemplateFileChange(e, "spoc")}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Expenditure File</label>
+                    <input
+                      type="file"
+                      onChange={(e) => handleTemplateFileChange(e, "expenditure")}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Box File</label>
+                    <input
+                      type="file"
+                      onChange={(e) => handleTemplateFileChange(e, "box")}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={templateLoading}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {templateLoading ? "Uploading..." : "Upload Files"}
+                  </button>
+                </div>
+              </form>
+
+              <h4 className="text-lg font-semibold mb-4 text-gray-800">Current Templates</h4>
+              {templateLoading && !existingTemplates ? (
+                <div className="text-center py-8">Loading...</div>
+              ) : existingTemplates ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {["spoc", "expenditure", "box"].map((type) => {
+                    const template = existingTemplates[type];
+                    return (
+                      <div key={type} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <h5 className="font-bold text-gray-700 uppercase mb-2">{type}</h5>
+                        {template ? (
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium truncate" title={template.file_name}>
+                              {template.file_name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Updated: {template.created_at ? new Date(template.created_at).toLocaleDateString() : "N/A"}
+                            </p>
+                            <div className="flex flex-wrap gap-2 mt-3">
+                              <a
+                                href={template.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1 text-xs font-medium text-blue-700 bg-blue-50 rounded hover:bg-blue-100 border border-blue-200"
+                              >
+                                View
+                              </a>
+                              <button
+                                onClick={() => handleDownloadFile(template.file_url, template.file_name)}
+                                className="px-3 py-1 text-xs font-medium text-green-700 bg-green-50 rounded hover:bg-green-100 border border-green-200"
+                              >
+                                Download
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-400 italic">No file uploaded</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500">No templates available.</p>
+              )}
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 text-right">
+              <button
+                onClick={() => setShowTemplateModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Deletion Confirmation Modal */}
       {showDeleteModal && deleteTarget && (

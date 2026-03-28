@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import DeletionRequestsBadge from "./DeletionRequestsBadge";
+import NotificationBell from "./NotificationBell";
+import NotificationPanel from "./NotificationPanel";
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -153,6 +155,8 @@ const Navbar = () => {
                 </Link>
               )}
 
+              <NotificationBell />
+
               {/* Profile Dropdown */}
               <div className="relative" ref={dropdownRef}>
                 <button
@@ -277,6 +281,8 @@ const Navbar = () => {
                   </div>
                 )}
               </div>
+
+              <NotificationPanel />
             </div>
           )}
         </div>

@@ -31,6 +31,9 @@ const EditProfile = () => {
     phoneNumber: "",
     linkedinUrl: "",
     githubUrl: "",
+    resumeLink: "",
+    aadharLink: "",
+    panLink: "",
     currentBacklogs: 0,
     historyOfBacklogs: [], // This was missing
     aboutMe: "",
@@ -88,6 +91,9 @@ const EditProfile = () => {
             phoneNumber: userData.profile.phoneNumber || "",
             linkedinUrl: userData.profile.linkedinUrl || "",
             githubUrl: userData.profile.githubUrl || "",
+            resumeLink: userData.profile.resumeLink || "",
+            aadharLink: userData.profile.aadharLink || "",
+            panLink: userData.profile.panLink || "",
             currentBacklogs: userData.profile.currentBacklogs || 0,
             historyOfBacklogs: userData.profile.historyOfBacklogs || [],
             aboutMe: userData.profile.aboutMe || "",
@@ -152,6 +158,11 @@ const EditProfile = () => {
   const submitBasicInfo = async () => {
     if (!basicInfo.cgpa && basicInfo.cgpa !== 0) {
       toast.error("CGPA is required");
+      return;
+    }
+
+    if (!basicInfo.resumeLink || !basicInfo.aadharLink || !basicInfo.panLink) {
+      toast.error("Resume URL, Aadhaar URL, and PAN URL are required");
       return;
     }
 
@@ -635,6 +646,51 @@ const EditProfile = () => {
             value={basicInfo.currentBacklogs}
             onWheel={(e) => e.target.blur()}
             onChange={handleBasicInfoChange}
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Resume URL *
+          </label>
+          <input
+            type="url"
+            name="resumeLink"
+            value={basicInfo.resumeLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/... or direct resume link"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Aadhaar Card URL *
+          </label>
+          <input
+            type="url"
+            name="aadharLink"
+            value={basicInfo.aadharLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/... or direct Aadhaar link"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            PAN Card URL *
+          </label>
+          <input
+            type="url"
+            name="panLink"
+            value={basicInfo.panLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/... or direct PAN link"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />

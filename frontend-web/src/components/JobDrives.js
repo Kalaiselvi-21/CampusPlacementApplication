@@ -62,6 +62,11 @@ const JobDrives = () => {
   // Eligibility modal states
   const [showEligibilityModal, setShowEligibilityModal] = useState(false);
   const [selectedDriveForEligibility, setSelectedDriveForEligibility] = useState(null);
+  const [driveFilesAvailability, setDriveFilesAvailability] = useState({});
+  const [showDriveFilesModal, setShowDriveFilesModal] = useState(false);
+  const [selectedDriveForFiles, setSelectedDriveForFiles] = useState(null);
+  const [selectedDriveFiles, setSelectedDriveFiles] = useState([]);
+  const [driveFilesLoading, setDriveFilesLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const fromPR = location?.state?.fromPR || false;
@@ -336,6 +341,13 @@ const JobDrives = () => {
         fetchedDrives.length
       );
       setDrives(fetchedDrives);
+
+      const poRole = user?.role === "po" || user?.role === "placement_officer";
+      if (poRole) {
+        await fetchDriveFilesAvailability(fetchedDrives, token);
+      } else {
+        setDriveFilesAvailability({});
+      }
     } catch (error) {
       console.error("Fetch drives error:", error);
       if (error.response?.status === 401) {
@@ -346,8 +358,93 @@ const JobDrives = () => {
         toast.error("Failed to fetch job drives");
       }
       setDrives([]);
+      setDriveFilesAvailability({});
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDriveFilesAvailability = async (drivesList, token) => {
+    if (!Array.isArray(drivesList) || drivesList.length === 0) {
+      setDriveFilesAvailability({});
+      return;
+    }
+
+    try {
+      const checks = await Promise.all(
+        drivesList.map(async (drive) => {
+          const driveId = drive?._id;
+          if (!driveId) return [driveId, false];
+
+          try {
+            const response = await axios.get(`${API_BASE}/api/drive-files/${driveId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            const files = Array.isArray(response.data?.files) ? response.data.files : [];
+            return [driveId, files.length > 0];
+          } catch (error) {
+            return [driveId, false];
+          }
+        })
+      );
+
+      const availabilityMap = {};
+      checks.forEach(([driveId, hasFiles]) => {
+        if (driveId) {
+          availabilityMap[driveId] = Boolean(hasFiles);
+        }
+      });
+      setDriveFilesAvailability(availabilityMap);
+    } catch (error) {
+      console.error("Error preparing drive file availability:", error);
+      setDriveFilesAvailability({});
+    }
+  };
+
+  const openDriveFilesModal = async (drive) => {
+    if (!drive?._id) return;
+
+    try {
+      setSelectedDriveForFiles(drive);
+      setShowDriveFilesModal(true);
+      setDriveFilesLoading(true);
+
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/drive-files/${drive._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setSelectedDriveFiles(Array.isArray(response.data?.files) ? response.data.files : []);
+    } catch (error) {
+      console.error("Error loading drive files:", error);
+      setSelectedDriveFiles([]);
+      toast.error("Failed to load drive files");
+    } finally {
+      setDriveFilesLoading(false);
+    }
+  };
+
+  const closeDriveFilesModal = () => {
+    setShowDriveFilesModal(false);
+    setSelectedDriveForFiles(null);
+    setSelectedDriveFiles([]);
+  };
+
+  const handleDriveFileDownload = async (fileUrl, fileName) => {
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName || "drive-file");
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Drive file download error:", error);
+      toast.error("Failed to download file");
     }
   };
 
@@ -2003,6 +2100,7 @@ const JobDrives = () => {
                 drive.selectionRounds.length > 0;
               const canManage = canManageDrive(drive);
               const viewOnly = isViewOnly(drive);
+              const hasDriveFiles = Boolean(driveFilesAvailability[drive._id]);
 
               // Check eligibility for both students and PRs
               let isEligible = true;
@@ -2094,6 +2192,20 @@ const JobDrives = () => {
                       >
                         View Details
                       </button>
+
+                      {isPOUser && (
+                        <button
+                          onClick={() => hasDriveFiles && openDriveFilesModal(drive)}
+                          disabled={!hasDriveFiles}
+                          className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
+                            hasDriveFiles
+                              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                          }`}
+                        >
+                          View Files
+                        </button>
+                      )}
 
                       {/* Student-specific buttons */}
                       {user?.role === "student" && !driveEnded && (
@@ -2279,6 +2391,90 @@ const JobDrives = () => {
       {/* Modals */}
       {showModal && selectedDrive && (
         <DriveModal drive={selectedDrive} onClose={closeModal} />
+      )}
+
+      {showDriveFilesModal && selectedDriveForFiles && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">
+                Uploaded Files - {selectedDriveForFiles.companyName}
+              </h2>
+              <button
+                onClick={closeDriveFilesModal}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6">
+              {driveFilesLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading files...</div>
+              ) : selectedDriveFiles.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">No files uploaded for this drive yet.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded By (PR)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {selectedDriveFiles.map((file) => (
+                        <tr key={file.id}>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900 uppercase">
+                            {file.file_type || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{file.file_name || "-"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {file.uploader_name || "Unknown"}
+                            <div className="text-xs text-gray-400">{file.uploader_email || ""}</div>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            {file.file_url ? (
+                              <div className="flex items-center gap-3">
+                                <a
+                                  href={file.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800"
+                                >
+                                  View
+                                </a>
+                                <button
+                                  onClick={() => handleDriveFileDownload(file.file_url, file.file_name)}
+                                  className="text-green-600 hover:text-green-800"
+                                >
+                                  Download
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={closeDriveFilesModal}
+                className="px-5 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showPlacedStudentsViewModal && selectedDriveForView && (

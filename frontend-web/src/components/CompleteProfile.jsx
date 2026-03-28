@@ -33,6 +33,9 @@ const CompleteProfile = () => {
     phoneNumber: "",
     linkedinUrl: "",
     githubUrl: "",
+    resumeLink: "",
+    aadharLink: "",
+    panLink: "",
     currentBacklogs: 0,
     historyOfBacklogs: [], // Add this field
     aboutMe: "",
@@ -192,6 +195,11 @@ const CompleteProfile = () => {
     if (!token || token === 'null' || token === 'undefined') {
       toast.error("Authentication required. Please log in again.");
       navigate("/login");
+      return;
+    }
+
+    if (!basicInfo.resumeLink || !basicInfo.aadharLink || !basicInfo.panLink) {
+      toast.error("Resume URL, Aadhaar URL, and PAN URL are required");
       return;
     }
 
@@ -718,6 +726,51 @@ const CompleteProfile = () => {
             value={basicInfo.currentBacklogs}
             onWheel={(e) => e.target.blur()}
             onChange={handleBasicInfoChange}
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Resume URL *
+          </label>
+          <input
+            type="url"
+            name="resumeLink"
+            value={basicInfo.resumeLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/... or direct resume link"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Aadhaar Card URL *
+          </label>
+          <input
+            type="url"
+            name="aadharLink"
+            value={basicInfo.aadharLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/... or direct Aadhaar link"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            PAN Card URL *
+          </label>
+          <input
+            type="url"
+            name="panLink"
+            value={basicInfo.panLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/... or direct PAN link"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />

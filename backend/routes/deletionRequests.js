@@ -146,12 +146,15 @@ router.post("/request", auth, async (req, res) => {
         return res.status(502).json({ message: "NeonDB auto-delete failed", error: neonError.message });
       }
 
-      // Create an approved deletion request for records
-      let deletionRequest;
+      // Best-effort: create an approved deletion request record for audit trail.
+      // The actual delete has already succeeded, so we should not fail the whole flow
+      // if this secondary write fails.
+      let deletionRequest = null;
+      let warning = null;
       try {
         logger.logAttempt('NEON', 'CREATE', 'DeletionRequest', 'Creating auto-approved deletion request');
         const createStartTime = Date.now();
-        
+
         const rows = await neonService.executeRawQuery(
           `
           INSERT INTO deletion_requests (
@@ -163,7 +166,7 @@ router.post("/request", auth, async (req, res) => {
           RETURNING *
           `,
           [
-            jobDriveId,
+            null,
             jobDriveDetails.companyName,
             jobDriveDetails.role,
             jobDriveDetails.date,
@@ -175,21 +178,23 @@ router.post("/request", auth, async (req, res) => {
           ]
         );
         deletionRequest = mapNeonDeletionRequest(rows[0]);
-        
+
         const createDuration = Date.now() - createStartTime;
         logger.logSuccess('NEON', 'CREATE', 'DeletionRequest', `Deletion request created in ${createDuration}ms`, deletionRequest.id);
         logger.logPerformance('CREATE', 'DeletionRequest', createDuration, 'NeonDB');
       } catch (neonError) {
+        warning = "Job drive deleted, but audit record creation failed";
         logger.logFailure("NEON", "CREATE", "DeletionRequest", neonError.message || neonError);
-        return res.status(502).json({ message: "NeonDB auto-approved request create failed", error: neonError.message });
       }
 
-      // Emit socket event for job drive deletion
+      // Emit socket event for job drive deletion regardless of audit row status.
       const io = req.app.get("io");
       emitJobDriveUpdate(io, "deleted", jobDriveDetails);
-      emitDeletionRequestUpdate(io, "approved", deletionRequest);
+      if (deletionRequest) {
+        emitDeletionRequestUpdate(io, "approved", deletionRequest);
+      }
 
-      return res.json({ message: "Job drive deleted successfully", deletionRequest });
+      return res.json({ message: "Job drive deleted successfully", deletionRequest, warning });
     }
 
     // For PRs, create a pending deletion request

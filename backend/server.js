@@ -1,11 +1,12 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
 const session = require("express-session");
 const passport = require("./config/passport");
-const path = require("path");
 const placementConsentRoutes = require("./routes/placementConsent");
+const notificationsRoutes = require("./routes/notifications");
 const http = require("http");
 const { Server } = require("socket.io");
 
@@ -136,6 +137,13 @@ try {
 }
 
 try {
+  console.log("Loading notifications routes...");
+  app.use("/api/notifications", notificationsRoutes);
+} catch (error) {
+  console.error("Error with notifications routes:", error.message);
+}
+
+try {
   console.log("Loading placement-analytics routes...");
   const placementAnalyticsRoutes = require("./routes/placementAnalytics");
   console.log(
@@ -154,6 +162,36 @@ try {
   app.use("/api/deletion-requests", deletionRequestRoutes);
 } catch (error) {
   console.error("Error with deletion-requests routes:", error.message);
+}
+
+// ✅ ADDED: Template management routes
+try {
+  console.log("Loading templates routes...");
+  const templatesRoutes = require("./routes/templates");
+  console.log("Templates routes type:", typeof templatesRoutes);
+  app.use("/api/templates", templatesRoutes);
+} catch (error) {
+  console.error("Error with templates routes:", error.message);
+}
+
+// ✅ ADDED: Box file management routes
+try {
+  console.log("Loading box-files routes...");
+  const boxFilesRoutes = require("./routes/boxFiles");
+  console.log("Box files routes type:", typeof boxFilesRoutes);
+  app.use("/api/box-files", boxFilesRoutes);
+} catch (error) {
+  console.error("Error with box-files routes:", error.message);
+}
+
+// ✅ ADDED: Job drive file management routes
+try {
+  console.log("Loading drive-files routes...");
+  const driveFilesRoutes = require("./routes/driveFiles");
+  console.log("Drive files routes type:", typeof driveFilesRoutes);
+  app.use("/api/drive-files", driveFilesRoutes);
+} catch (error) {
+  console.error("Error with drive-files routes:", error.message);
 }
 
 console.log("Finished loading routes");
@@ -177,9 +215,23 @@ io.on("connection", (socket) => {
 
   // Join user to their role-specific room
   socket.on("join-room", (userData) => {
-    if (userData?.role) {
-      socket.join(userData.role);
-      console.log(`User ${socket.id} joined room: ${userData.role}`);
+    const role = userData?.role ? String(userData.role).trim() : "";
+    const userId = userData?.userId ? String(userData.userId).trim() : "";
+    const department = userData?.department ? String(userData.department).trim() : "";
+
+    if (role) {
+      socket.join(role); // legacy room name used by existing events
+      console.log(`User ${socket.id} joined room: ${role}`);
+    }
+
+    if (userId) {
+      socket.join(`user:${userId}`);
+      console.log(`User ${socket.id} joined room: user:${userId}`);
+    }
+
+    if (department) {
+      socket.join(`dept:${department}`);
+      console.log(`User ${socket.id} joined room: dept:${department}`);
     }
   });
 
@@ -199,6 +251,8 @@ app.use((err, req, res, next) => {
 // ============================================
 const { testNeonConnection } = require("./config/neonConnection");
 const databaseService = require("./services/database/databaseService");
+const notificationService = require("./services/notifications/notificationService");
+const fileNotificationService = require("./services/notifications/fileNotificationService");
 
 async function initializeDatabases() {
   console.log("\n========================================");
@@ -213,6 +267,8 @@ async function initializeDatabases() {
     if (neonConnected) {
       console.log("[SUCCESS] NeonDB is ready as PRIMARY database");
       await databaseService.initialize();
+      await notificationService.ensureSchema();
+      await fileNotificationService.ensureSchema();
     }
   } catch (error) {
     console.error("[ERROR] NeonDB connection failed:", error.message);
@@ -236,6 +292,8 @@ const PORT = process.env.PORT || 5000;
 
 initializeDatabases()
   .then(() => {
+    fileNotificationService.startDailyScheduler(io);
+
     server.listen(PORT, () => {
       console.log(`✓ Server running on port ${PORT}`);
       console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);

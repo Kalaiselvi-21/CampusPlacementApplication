@@ -2,6 +2,7 @@ const { auth: authMiddleware } = require('../../middleware/auth');
 const neonService = require('../../services/database/neonService');
 const logger = require('../../services/database/logger');
 const { emitResourceAdded } = require('../../utils/socketUtils');
+const notificationService = require('../../services/notifications/notificationService');
 
 const router = require('express').Router();
 
@@ -101,6 +102,39 @@ router.post('/', authMiddleware, async (req, res) => {
         department: item.department,
         addedBy: req.user.profile?.name || req.user.email
       });
+    }
+
+    try {
+      const departments = [item.department || 'ALL'];
+      const titleText = 'New Preparation Resource Uploaded';
+      const messageText = `New interview preparation resource uploaded for ${item.department || 'ALL'} Department: ${item.title}`;
+
+      await notificationService.createForDepartments({
+        departments,
+        roles: ['student', 'placement_representative', 'pr'],
+        type: 'resource_uploaded',
+        title: titleText,
+        message: messageText,
+        metadata: {
+          resourceId: String(item._id || item.id),
+          title: item.title,
+          department: item.department,
+          type: item.type,
+          urlOrPath: item.urlOrPath,
+        },
+      });
+
+      if (io) {
+        if (departments.includes('ALL')) {
+          io.to('student').emit('notification:new', { type: 'resource_uploaded' });
+          io.to('placement_representative').emit('notification:new', { type: 'resource_uploaded' });
+          io.to('pr').emit('notification:new', { type: 'resource_uploaded' });
+        } else {
+          departments.forEach((dept) => io.to(`dept:${dept}`).emit('notification:new', { type: 'resource_uploaded' }));
+        }
+      }
+    } catch (notifyError) {
+      console.error('Failed to create resource notifications:', notifyError?.message || notifyError);
     }
 
     res.status(201).json(item);

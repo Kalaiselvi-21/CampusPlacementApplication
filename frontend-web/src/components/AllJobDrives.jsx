@@ -66,7 +66,7 @@ const buildFallbackSelectionRounds = (roundsValue) =>
   }));
 
 const AllJobDrives = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const fromPR = location?.state?.fromPR || false;
@@ -80,6 +80,8 @@ const AllJobDrives = () => {
   const [showPlacedStudentsViewModal, setShowPlacedStudentsViewModal] =
     useState(false);
   const [selectedDriveForView, setSelectedDriveForView] = useState(null);
+  const [viewListTitle, setViewListTitle] = useState("Placed Students");
+  const [viewListType, setViewListType] = useState("placed");
   const [editingStudent, setEditingStudent] = useState(null);
   const [editStudentData, setEditStudentData] = useState({
     name: "",
@@ -101,6 +103,13 @@ const AllJobDrives = () => {
   const [roundApplicants, setRoundApplicants] = useState([]);
   const [selectedStudentsForRound, setSelectedStudentsForRound] = useState([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
+
+  // Drive file modal states (PR upload/change/delete, PO view/download)
+  const [showDriveFilesModal, setShowDriveFilesModal] = useState(false);
+  const [selectedDriveForFiles, setSelectedDriveForFiles] = useState(null);
+  const [driveFiles, setDriveFiles] = useState([]);
+  const [driveFilesLoading, setDriveFilesLoading] = useState(false);
+  const [driveFileActionLoading, setDriveFileActionLoading] = useState(false);
 
   // Deletion confirmation modal states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -232,6 +241,15 @@ const AllJobDrives = () => {
     "Industrial Biotechnology",
     "Electronic and Instrumentation Engineering",
   ];
+
+  const normalizedUserRole = normalizeRole(user?.role);
+  const isPORole =
+    normalizedUserRole === "po" ||
+    normalizedUserRole === "placement_officer" ||
+    normalizedUserRole === "admin";
+  const isPRRole =
+    normalizedUserRole === "placement_representative" ||
+    normalizedUserRole === "pr";
 
   // Add these helper functions at the top of the component
   const isDriveCreator = (drive) => {
@@ -392,6 +410,8 @@ const AllJobDrives = () => {
   };
 
   const handleViewPlacedStudents = async (drive) => {
+    setViewListTitle("Placed Students");
+    setViewListType("placed");
     try {
       const driveEnded = isDriveEnded(drive);
       const rounds = getDriveSelectionRounds(drive);
@@ -534,10 +554,59 @@ const AllJobDrives = () => {
     }
   };
 
+  const handleViewApplications = async (drive) => {
+    try {
+      const token = localStorage.getItem("token");
+      setViewListTitle("Applied Students");
+      setViewListType("applied");
+
+      const response = await fetch(`${API_BASE}/api/job-drives/${drive._id}/students`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch applications");
+      }
+
+      const data = await response.json();
+      const applications = Array.isArray(data?.students) ? data.students : [];
+
+      const mappedStudents = applications.map((student) => {
+        const profile = student.profile || {};
+        return {
+          name: student.name || profile.name || "N/A",
+          rollNumber: student.rollNumber || profile.rollNumber || "N/A",
+          department: student.department || profile.department || "N/A",
+          cgpa: student.cgpa ?? profile.cgpa ?? "N/A",
+          email: student.email || "N/A",
+          mobileNumber:
+            student.phoneNumber ||
+            student.mobileNumber ||
+            student.phone ||
+            profile.mobileNumber ||
+            profile.phoneNumber ||
+            "N/A",
+          addedAt: student.appliedAt || student.createdAt || null,
+        };
+      });
+
+      setSelectedDriveForView({
+        ...drive,
+        placedStudents: mappedStudents,
+      });
+      setShowPlacedStudentsViewModal(true);
+    } catch (error) {
+      console.error("Error fetching applicants:", error);
+      toast.error("Failed to fetch applicants");
+    }
+  };
+
   useEffect(() => {
-    // Wait for auth context to load before checking user
-    if (user === null) {
-      // Still loading auth state, don't redirect yet
+    if (authLoading) {
       return;
     }
 
@@ -552,7 +621,7 @@ const AllJobDrives = () => {
       return;
     }
     fetchAllJobDrives();
-  }, [user, navigate]);
+  }, [authLoading, user, navigate]);
   
   // Update fetchAllJobDrives to use department filter
   const fetchAllJobDrives = async () => {
@@ -894,7 +963,7 @@ const AllJobDrives = () => {
     link.setAttribute("href", url);
     link.setAttribute(
       "download",
-      `${selectedDriveForView.companyName}_placed_students.csv`
+      `${selectedDriveForView.companyName}_${viewListType}_students.csv`
     );
     link.style.visibility = "hidden";
     document.body.appendChild(link);
@@ -944,6 +1013,153 @@ const AllJobDrives = () => {
   const handleManageRoundsClick = (drive) => {
     setSelectedDriveForRounds(drive);
     setShowManageRoundsModal(true);
+  };
+
+  const fetchDriveFilesForDrive = async (driveId) => {
+    setDriveFilesLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_BASE}/api/drive-files/${driveId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDriveFiles(Array.isArray(response.data?.files) ? response.data.files : []);
+    } catch (error) {
+      console.error("Error fetching drive files:", error);
+      toast.error("Failed to load drive files");
+      setDriveFiles([]);
+    } finally {
+      setDriveFilesLoading(false);
+    }
+  };
+
+  const openDriveFilesModal = async (drive) => {
+    setSelectedDriveForFiles(drive);
+    setShowDriveFilesModal(true);
+    await fetchDriveFilesForDrive(drive._id);
+  };
+
+  const closeDriveFilesModal = () => {
+    setShowDriveFilesModal(false);
+    setSelectedDriveForFiles(null);
+    setDriveFiles([]);
+  };
+
+  const getLatestDriveFileByType = (fileType) => {
+    if (!Array.isArray(driveFiles)) return null;
+    return driveFiles.find((file) => String(file?.file_type || "").toLowerCase() === fileType);
+  };
+
+  const getDriveFileTypeLabel = (fileType) => {
+    const normalizedType = String(fileType || "").toLowerCase();
+    if (normalizedType === "spoc") return "SPOC FILE";
+    if (normalizedType === "expenditure") return "EXPENDITURE FILE";
+    return String(fileType || "FILE").toUpperCase();
+  };
+
+  const getDriveFileDeadlineInfo = (drive) => {
+    if (!drive) return { deadlineDate: null, deadlineLabel: "N/A", deadlinePassed: false };
+
+    let firstRoundDate = null;
+    if (Array.isArray(drive.selectionRounds) && drive.selectionRounds.length > 0) {
+      const sorted = [...drive.selectionRounds]
+        .map((round) => round?.date)
+        .filter(Boolean)
+        .map((value) => new Date(value))
+        .filter((date) => !Number.isNaN(date.getTime()))
+        .sort((a, b) => a.getTime() - b.getTime());
+      firstRoundDate = sorted[0] || null;
+    }
+
+    const baseDate = firstRoundDate || (drive.date ? new Date(drive.date) : null);
+    if (!baseDate || Number.isNaN(baseDate.getTime())) {
+      return { deadlineDate: null, deadlineLabel: "N/A", deadlinePassed: false };
+    }
+
+    const deadlineDate = new Date(baseDate);
+    deadlineDate.setDate(deadlineDate.getDate() + 30);
+    deadlineDate.setHours(23, 59, 59, 999);
+
+    return {
+      deadlineDate,
+      deadlineLabel: deadlineDate.toLocaleDateString(),
+      deadlinePassed: new Date() > deadlineDate,
+    };
+  };
+
+  const handleDriveFileUpload = async (fileType, event) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedDriveForFiles?._id) return;
+
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("Only PDF and DOCX files are allowed");
+      event.target.value = "";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("jobDriveId", selectedDriveForFiles._id);
+    formData.append("fileType", fileType);
+
+    setDriveFileActionLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      await axios.post(`${API_BASE}/api/drive-files/upload`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      toast.success(`${getDriveFileTypeLabel(fileType)} uploaded successfully`);
+      await fetchDriveFilesForDrive(selectedDriveForFiles._id);
+    } catch (error) {
+      console.error("Drive file upload error:", error);
+      toast.error(error.response?.data?.message || "Failed to upload file");
+    } finally {
+      setDriveFileActionLoading(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleDriveFileDelete = async (fileId) => {
+    if (!fileId || !selectedDriveForFiles?._id) return;
+
+    setDriveFileActionLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(`${API_BASE}/api/drive-files/file/${fileId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast.success("File deleted successfully");
+      await fetchDriveFilesForDrive(selectedDriveForFiles._id);
+    } catch (error) {
+      console.error("Drive file delete error:", error);
+      toast.error(error.response?.data?.message || "Failed to delete file");
+    } finally {
+      setDriveFileActionLoading(false);
+    }
+  };
+
+  const handleDriveFileDownload = async (fileUrl, fileName) => {
+    try {
+      const response = await fetch(fileUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName || "drive-file");
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Drive file download error:", error);
+      toast.error("Failed to download file");
+    }
   };
 
   const handleRoundSelect = async (round, roundIndex) => {
@@ -1736,6 +1952,8 @@ const AllJobDrives = () => {
                 displayRounds.length > 0;
               const canManage = canManageDrive(drive);
               const isCreator = isDriveCreator(drive);
+              const canUploadDriveFiles = canManage && isPRRole;
+              const canViewDriveFiles = isPORole;
 
               return (
                 <div key={drive._id} className="bg-white p-6 rounded-lg shadow">
@@ -1808,6 +2026,33 @@ const AllJobDrives = () => {
                       >
                         View
                       </button>
+
+                      {(isPRRole || isPORole) && (
+                        <button
+                          onClick={() => handleViewApplications(drive)}
+                          className="px-4 py-2 bg-green-100 text-green-700 hover:bg-green-200 rounded-lg font-medium text-sm"
+                        >
+                          View Applications
+                        </button>
+                      )}
+
+                      {canUploadDriveFiles && (
+                        <button
+                          onClick={() => openDriveFilesModal(drive)}
+                          className="px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg font-medium text-sm"
+                        >
+                          Upload Files
+                        </button>
+                      )}
+
+                      {canViewDriveFiles && (
+                        <button
+                          onClick={() => openDriveFilesModal(drive)}
+                          className="px-4 py-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg font-medium text-sm"
+                        >
+                          View Files
+                        </button>
+                      )}
 
                       {/* Add Manage Rounds button in the action buttons section (after View Details button) */}
                       {canManage && (
@@ -2007,6 +2252,166 @@ const AllJobDrives = () => {
           </div>
         </div>
       )}
+
+      {/* Drive Files Modal */}
+      {showDriveFilesModal && selectedDriveForFiles && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">
+                {isPORole ? "Uploaded Files" : "Manage Files"} - {selectedDriveForFiles.companyName}
+              </h2>
+              <button
+                onClick={closeDriveFilesModal}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6">
+              {!isPORole && (() => {
+                const info = getDriveFileDeadlineInfo(selectedDriveForFiles);
+                if (!info.deadlineDate) return null;
+                return (
+                  <div className={`mb-4 rounded-lg px-4 py-3 text-sm ${info.deadlinePassed ? "border border-red-200 bg-red-50 text-red-700" : "border border-blue-200 bg-blue-50 text-blue-700"}`}>
+                    Drive file upload deadline: {info.deadlineLabel}
+                    {info.deadlinePassed ? " (closed)" : ""}
+                  </div>
+                );
+              })()}
+
+              {driveFilesLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading files...</div>
+              ) : isPORole ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">File Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uploaded By (PR)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {driveFiles.length === 0 ? (
+                        <tr>
+                          <td colSpan="4" className="px-4 py-6 text-center text-gray-500">
+                            No files uploaded for this drive yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        driveFiles.map((file) => (
+                          <tr key={file.id}>
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              {getDriveFileTypeLabel(file.file_type)}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{file.file_name || "-"}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {file.uploader_name || "Unknown"}
+                              <div className="text-xs text-gray-400">{file.uploader_email || ""}</div>
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {file.file_url ? (
+                                <div className="flex items-center gap-3">
+                                  <a
+                                    href={file.file_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800"
+                                  >
+                                    View
+                                  </a>
+                                  <button
+                                    onClick={() => handleDriveFileDownload(file.file_url, file.file_name)}
+                                    className="text-green-600 hover:text-green-800"
+                                  >
+                                    Download
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {[
+                    { type: "spoc", title: "SPOC FILE", accent: "text-indigo-700" },
+                    { type: "expenditure", title: "EXPENDITURE FILE", accent: "text-orange-700" },
+                  ].map((entry) => {
+                    const currentFile = getLatestDriveFileByType(entry.type);
+                    const inputId = `drive-file-${entry.type}`;
+                    const deadlineInfo = getDriveFileDeadlineInfo(selectedDriveForFiles);
+                    const disableUploadActions = driveFileActionLoading || deadlineInfo.deadlinePassed;
+                    return (
+                      <div key={entry.type} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                        <div className={`text-sm font-bold ${entry.accent}`}>{entry.title}</div>
+                        <div className="mt-2 text-gray-700 italic truncate">
+                          {currentFile?.file_name || "No file uploaded"}
+                        </div>
+                        <div className="mt-3 flex items-center gap-3 flex-wrap">
+                          {currentFile?.file_url && (
+                            <a
+                              href={currentFile.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-lg text-sm font-medium"
+                            >
+                              View
+                            </a>
+                          )}
+
+                          <label
+                            htmlFor={inputId}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium ${disableUploadActions ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200 cursor-pointer"}`}
+                          >
+                            {currentFile ? "Change" : "Upload"}
+                          </label>
+                          <input
+                            id={inputId}
+                            type="file"
+                            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            className="hidden"
+                            onChange={(event) => handleDriveFileUpload(entry.type, event)}
+                            disabled={disableUploadActions}
+                          />
+
+                          {currentFile?.id && (
+                            <button
+                              onClick={() => handleDriveFileDelete(currentFile.id)}
+                              className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg text-sm font-medium"
+                              disabled={driveFileActionLoading}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={closeDriveFilesModal}
+                className="px-5 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Placed Students Modal */}
       {/* Removed Placed Students Modal */}
 
@@ -2067,7 +2472,7 @@ const AllJobDrives = () => {
           <div className="bg-white rounded-lg p-6 w-full max-w-5xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold">
-                Placed Students - {selectedDriveForView?.companyName}
+                {viewListTitle} - {selectedDriveForView?.companyName}
               </h2>
             </div>
 
@@ -2088,7 +2493,9 @@ const AllJobDrives = () => {
                     {getAppliedStudentsCount(selectedDriveForView)}
                   </p>
                   <p>
-                    <span className="font-medium">Total Placed:</span>{" "}
+                    <span className="font-medium">
+                      {viewListType === "applied" ? "Total Applied:" : "Total Placed:"}
+                    </span>{" "}
                     {selectedDriveForView.placedStudents?.length || 0}
                   </p>
                 </div>
@@ -2149,7 +2556,9 @@ const AllJobDrives = () => {
             ) : (
               <div className="text-center py-8">
                 <p className="text-gray-500">
-                  No placed students found for this drive.
+                  {viewListType === "applied"
+                    ? "No applicants found for this drive."
+                    : "No placed students found for this drive."}
                 </p>
               </div>
             )}
@@ -2416,12 +2825,9 @@ const RoundStudentsModal = ({
           }
         );
       } else {
-        response = await axios.get(`${API_BASE}/api/job-drives/${jobDrive._id}/students`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
+        // "View Selected" should only display selected students for that round.
+        setStudents([]);
+        return;
       }
 
       console.log("✅ API Response received:", response.data);

@@ -276,8 +276,12 @@ router.delete("/delete-account", auth, async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     }
 
-    // Use the new cleanup method that handles PR allowlist automatically
-    await databaseService.deleteUserWithCleanup(req.user.id);
+    // Use cleanup + archival metadata so deleted_users can track actor and reason
+    await databaseService.deleteUserWithCleanup(
+      req.user.id,
+      req.user.id,
+      "Self account deletion"
+    );
 
     res.json({ message: "Account deleted successfully." });
   } catch (error) {

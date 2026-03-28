@@ -280,12 +280,15 @@ class NeonService {
 
     const columns = await this.getTableColumns('placed_students');
 
-    // Before deleting, collect the old student IDs so we can unmark them if needed
-    const oldRows = await this.executeRawQuery(
-      `SELECT student_id FROM placed_students WHERE job_drive_id = $1 AND student_id IS NOT NULL`,
-      [driveId]
-    );
-    const oldStudentIds = oldRows.map((r) => r.student_id).filter(Boolean);
+    // Before deleting, collect old student IDs if the schema supports this column.
+    const oldStudentIds = [];
+    if (columns.has('student_id')) {
+      const oldRows = await this.executeRawQuery(
+        `SELECT student_id FROM placed_students WHERE job_drive_id = $1 AND student_id IS NOT NULL`,
+        [driveId]
+      );
+      oldStudentIds.push(...oldRows.map((r) => r.student_id).filter(Boolean));
+    }
 
     await this.executeRawQuery(`DELETE FROM placed_students WHERE job_drive_id = $1`, [driveId]);
 
@@ -1185,18 +1188,89 @@ class NeonService {
   /**
    * Delete user by ID
    */
-  async deleteUserById(userId) {
+  async deleteUserById(userId, deletedBy = null, deletionReason = null) {
     const connected = await this.checkConnection();
     if (!connected) {
       throw new Error('NeonDB not connected');
     }
 
-    // First, get user email for allowlist cleanup
+    // First, get user email and profile snapshot for allowlist cleanup + archival
     const [userResult] = await sequelize.query(`
-      SELECT email FROM users WHERE id = $1
+      SELECT
+        u.id,
+        u.email,
+        to_jsonb(u) AS user_json,
+        to_jsonb(up) AS profile_json
+      FROM users u
+      LEFT JOIN user_profiles up ON up.user_id = u.id
+      WHERE u.id = $1
+      LIMIT 1
     `, {
       bind: [userId]
     });
+
+    if (!userResult || userResult.length === 0) {
+      return false;
+    }
+
+    const userEmail = userResult[0].email;
+    const originalUserData = {
+      user: userResult[0].user_json || null,
+      profile: userResult[0].profile_json || null,
+    };
+    const archiveDeletedBy = deletedBy && deletedBy !== userId ? deletedBy : null;
+
+    // Archive row in deleted_users if table and columns exist.
+    // Dynamic column handling keeps this backward compatible across schema variants.
+    try {
+      const [deletedUsersColumns] = await sequelize.query(
+        `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'deleted_users'
+        `
+      );
+
+      const columnSet = new Set((deletedUsersColumns || []).map((c) => c.column_name));
+      const insertColumns = [];
+      const insertValues = [];
+      const bind = [];
+      let idx = 1;
+
+      const addCol = (name, value, useNow = false) => {
+        insertColumns.push(name);
+        if (useNow) {
+          insertValues.push('NOW()');
+          return;
+        }
+        insertValues.push(`$${idx++}`);
+        bind.push(value);
+      };
+
+      if (columnSet.has('original_user_id')) addCol('original_user_id', userId);
+      if (columnSet.has('user_id')) addCol('user_id', userId);
+      if (columnSet.has('original_user_data')) addCol('original_user_data', JSON.stringify(originalUserData));
+      if (columnSet.has('user_data')) addCol('user_data', JSON.stringify(originalUserData));
+      if (columnSet.has('deleted_by')) addCol('deleted_by', archiveDeletedBy);
+      if (columnSet.has('deleted_by_user_id')) addCol('deleted_by_user_id', archiveDeletedBy);
+      if (columnSet.has('reason')) addCol('reason', deletionReason || 'Account deleted');
+      if (columnSet.has('deletion_reason')) addCol('deletion_reason', deletionReason || 'Account deleted');
+      if (columnSet.has('deleted_at')) addCol('deleted_at', null, true);
+      if (columnSet.has('created_at')) addCol('created_at', null, true);
+      if (columnSet.has('updated_at')) addCol('updated_at', null, true);
+      if (columnSet.has('email')) addCol('email', userEmail);
+      if (columnSet.has('name')) addCol('name', originalUserData.user?.name || null);
+      if (columnSet.has('role')) addCol('role', originalUserData.user?.role || null);
+
+      if (insertColumns.length > 0) {
+        await sequelize.query(
+          `INSERT INTO deleted_users (${insertColumns.join(', ')}) VALUES (${insertValues.join(', ')})`,
+          { bind }
+        );
+      }
+    } catch (archiveError) {
+      console.error('Warning: Could not archive deleted user in deleted_users:', archiveError.message);
+    }
 
     // Preserve job drives created by the user while removing account
     // so UI can render "Missing creator info" instead of deleting drives.
@@ -1216,19 +1290,16 @@ class NeonService {
     });
 
     // Clean up PR allowlist entry if it exists
-    if (userResult.length > 0) {
-      const userEmail = userResult[0].email;
-      try {
-        await sequelize.query(`
-          DELETE FROM pr_allowlist WHERE user_id = $1 OR email = $2
-        `, {
-          bind: [userId, userEmail.toLowerCase()]
-        });
-        console.log(`✅ Cleaned up PR allowlist entry for: ${userEmail}`);
-      } catch (allowlistError) {
-        console.log(`Note: Could not clean up PR allowlist for ${userEmail}:`, allowlistError.message);
-        // Don't fail user deletion if allowlist cleanup fails
-      }
+    try {
+      await sequelize.query(`
+        DELETE FROM pr_allowlist WHERE user_id = $1 OR email = $2
+      `, {
+        bind: [userId, userEmail.toLowerCase()]
+      });
+      console.log(`✅ Cleaned up PR allowlist entry for: ${userEmail}`);
+    } catch (allowlistError) {
+      console.log(`Note: Could not clean up PR allowlist for ${userEmail}:`, allowlistError.message);
+      // Don't fail user deletion if allowlist cleanup fails
     }
 
     return true;
@@ -2376,6 +2447,86 @@ class NeonService {
       return stats[0];
     } catch (error) {
       console.error('Error getting PR stats:', error);
+      throw error;
+    }
+  }
+
+  // ✅ ADDED
+  /**
+   * Get a detailed matrix of file submission status for all active drives.
+   * Returns one row per (drive x required file type).
+   */
+  async getDetailedFileSubmissionStatus(filters = {}) {
+    try {
+      const params = [];
+      let paramIndex = 1;
+      let whereClause = 'WHERE 1=1';
+
+      if (filters.fileType) {
+        whereClause += ` AND m.f_type = $${paramIndex++}`;
+        params.push(filters.fileType);
+      }
+
+      if (filters.department) {
+        whereClause += ` AND m.spoc_dept = $${paramIndex++}`;
+        params.push(filters.department);
+      }
+
+      if (filters.submissionStatus === 'Submitted') {
+        whereClause += ' AND jdf.id IS NOT NULL';
+      } else if (filters.submissionStatus === 'Not Submitted') {
+        whereClause += ' AND jdf.id IS NULL';
+      }
+
+      const sql = `
+        WITH file_types AS (
+          SELECT 'spoc' AS f_type
+          UNION ALL
+          SELECT 'expenditure' AS f_type
+        ),
+        expected_matrix AS (
+          SELECT
+            jd.id AS drive_id,
+            jd.company_name,
+            jd.role,
+            jd.spoc_dept,
+            ft.f_type
+          FROM job_drives jd
+          CROSS JOIN file_types ft
+          WHERE jd.is_active = true
+        )
+        SELECT DISTINCT ON (m.drive_id, m.f_type)
+          m.drive_id,
+          m.company_name,
+          m.role,
+          m.spoc_dept AS uploader_department,
+          m.f_type AS file_type,
+          jdf.id,
+          jdf.file_name,
+          jdf.file_url,
+          jdf.created_at,
+          u.name AS uploader_name,
+          u.email AS uploader_email,
+          CASE WHEN jdf.id IS NOT NULL THEN 'Submitted' ELSE 'Not Submitted' END AS submission_status,
+          (
+            SELECT COUNT(DISTINCT f2.file_type)
+            FROM job_drive_files f2
+            WHERE f2.job_drive_id::text = m.drive_id::text
+              AND f2.file_type IN ('spoc', 'expenditure')
+          ) = 2 AS is_drive_complete
+        FROM expected_matrix m
+        LEFT JOIN job_drive_files jdf
+          ON m.drive_id::text = jdf.job_drive_id::text
+          AND m.f_type = jdf.file_type
+        LEFT JOIN users u ON jdf.uploader_id = u.id
+        ${whereClause}
+        ORDER BY m.drive_id ASC, m.f_type ASC, jdf.created_at DESC
+      `;
+
+      const [rows] = await this.sequelize.query(sql, { bind: params });
+      return rows;
+    } catch (error) {
+      console.error('Error getting detailed file submission status:', error);
       throw error;
     }
   }
