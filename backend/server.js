@@ -46,7 +46,9 @@ app.use(
     origin: function (origin, callback) {
       if (!origin) return callback(null, true); // allow same-origin/non-browser
       const o = origin.replace(/\/$/, "");
+      // Allow exact matches or any nifo.vercel.app preview deployment
       if (allowedOrigins.includes(o)) return callback(null, true);
+      if (o.endsWith(".vercel.app")) return callback(null, true);
       return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
