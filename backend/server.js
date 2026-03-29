@@ -38,6 +38,7 @@ app.set("io", io);
 const allowedOrigins = [
   (process.env.CLIENT_URL || "https://placement-app-omega.vercel.app").replace(/\/$/, ""),
   (process.env.EXPO_QUIZ_URL || "https://placement-app-sewb.vercel.app/").replace(/\/$/, ""),
+  "https://campus-placement-application-r9h3hnq3v-nifo.vercel.app",
 ];
 
 app.use(
