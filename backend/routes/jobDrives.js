@@ -697,23 +697,26 @@ router.get("/student-drives", auth, async (req, res) => {
       return res.status(403).json({ message: "Access denied - Students only" });
     }
 
-    const drives = await neonService.getEligibleDrivesForStudent(req.user.id);
-    const enriched = await Promise.all(
-      drives.map(async (drive) => {
-        const hasApplied = await neonService.hasStudentApplied(drive.id || drive._id, req.user.id);
-        return {
-          ...formatDriveForDisplay(drive),
-          hasApplied,
-          applications: hasApplied ? [{ student: req.user.id }] : [],
-          database: "NEON",
-        };
-      })
-    );
+    const [drives, appliedIds] = await Promise.all([
+      neonService.getEligibleDrivesForStudent(req.user.id),
+      neonService.getAppliedDriveIdsForStudent(req.user.id),
+    ]);
+
+    const enriched = drives.map((drive) => {
+      const driveId = String(drive.id || drive._id);
+      const hasApplied = appliedIds.has(driveId);
+      return {
+        ...formatDriveForDisplay(drive),
+        hasApplied,
+        applications: hasApplied ? [{ student: req.user.id }] : [],
+        database: "NEON",
+      };
+    });
 
     return res.json({
       drives: enriched,
       count: enriched.length,
-         sources: { neon: enriched.length, total: enriched.length },
+      sources: { neon: enriched.length, total: enriched.length },
       database: "NEON",
     });
   } catch (error) {
@@ -741,13 +744,11 @@ router.get("/stats", auth, async (req, res) => {
     const upcomingDrives = await neonService.countJobDrives({ isActive: true });
 
     if (req.user.role === "student") {
-      const eligibleDrives = await neonService.getEligibleDrivesForStudent(req.user.id);
-      let appliedDrives = 0;
-      for (const drive of eligibleDrives) {
-        if (await neonService.hasStudentApplied(drive.id || drive._id, req.user.id)) {
-          appliedDrives += 1;
-        }
-      }
+      const [eligibleDrives, appliedIds] = await Promise.all([
+        neonService.getEligibleDrivesForStudent(req.user.id),
+        neonService.getAppliedDriveIdsForStudent(req.user.id),
+      ]);
+      const appliedDrives = eligibleDrives.filter((d) => appliedIds.has(String(d.id || d._id))).length;
 
       return res.json({
         totalDrives: eligibleDrives.length,

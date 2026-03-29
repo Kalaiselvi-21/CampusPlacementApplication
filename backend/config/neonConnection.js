@@ -10,12 +10,12 @@ const sequelize = new Sequelize(process.env.NEON_DATABASE_URL, {
     }
   },
   pool: {
-    max: 10,
-    min: 2,
+    max: 50,
+    min: 5,
     acquire: 30000,
     idle: 10000
   },
-  logging: false, // Set to console.log to see SQL queries
+  logging: false,
   timezone: '+00:00'
 });
 
@@ -31,10 +31,5 @@ async function testNeonConnection() {
     return false;
   }
 }
-
-// Connection event handlers
-sequelize.beforeConnect(() => {
-  console.log('[NEON] Establishing connection...');
-});
 
 module.exports = { sequelize, testNeonConnection };

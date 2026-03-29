@@ -14,7 +14,9 @@ const emitToStudents = (io, event, data) => {
 };
 
 const emitToAll = (io, event, data) => {
-  io.emit(event, data);
+  emitToPOs(io, event, data);
+  emitToPRs(io, event, data);
+  emitToStudents(io, event, data);
 };
 
 // Specific event emitters for different actions
@@ -24,8 +26,10 @@ const emitJobDriveUpdate = (io, action, jobDrive) => {
     jobDrive,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "jobDriveUpdate", eventData);
+  // Only students and PRs care about job drive updates
+  emitToStudents(io, "jobDriveUpdate", eventData);
+  emitToPRs(io, "jobDriveUpdate", eventData);
+  emitToPOs(io, "jobDriveUpdate", eventData);
 };
 
 const emitApplicationUpdate = (io, action, applicationData) => {
@@ -34,8 +38,9 @@ const emitApplicationUpdate = (io, action, applicationData) => {
     applicationData,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "applicationUpdate", eventData);
+  // PR and PO need to see applications; student only needs their own (handled by userId room if needed)
+  emitToPRs(io, "applicationUpdate", eventData);
+  emitToPOs(io, "applicationUpdate", eventData);
 };
 
 const emitDeletionRequestUpdate = (io, action, deletionRequest) => {
@@ -45,18 +50,11 @@ const emitDeletionRequestUpdate = (io, action, deletionRequest) => {
     timestamp: new Date(),
   };
 
-  // Emit to POs for approval actions
   if (action === "created") {
     emitToPOs(io, "deletionRequestUpdate", eventData);
-  }
-
-  // Emit to PRs for status updates
-  if (action === "approved" || action === "rejected") {
+  } else if (action === "approved" || action === "rejected") {
     emitToPRs(io, "deletionRequestUpdate", eventData);
   }
-
-  // Also emit to all for general updates
-  emitToAll(io, "deletionRequestUpdate", eventData);
 };
 
 const emitPlacementUpdate = (io, action, placement) => {
@@ -65,8 +63,8 @@ const emitPlacementUpdate = (io, action, placement) => {
     placement,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "placementUpdate", eventData);
+  emitToPOs(io, "placementUpdate", eventData);
+  emitToPRs(io, "placementUpdate", eventData);
 };
 
 const emitAnalyticsUpdate = (io, data) => {
@@ -74,46 +72,38 @@ const emitAnalyticsUpdate = (io, data) => {
     data,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "analyticsUpdate", eventData);
+  // Analytics are only viewed by PO/PR
+  emitToPOs(io, "analyticsUpdate", eventData);
+  emitToPRs(io, "analyticsUpdate", eventData);
 };
 
 // Placement Preparation specific events
 const emitTestPublished = (io, data) => {
   const eventData = { ...data, timestamp: new Date() };
-  
-  // Emit to department students and PRs
-  if (data.department && data.department !== 'ALL') {
-    emitToAll(io, "test:published", eventData);
-  } else {
-    emitToAll(io, "test:published", eventData);
-  }
-  
-  // Also emit to PRs specifically
+  emitToStudents(io, "test:published", eventData);
   emitToPRs(io, "test:published", eventData);
 };
 
 const emitTestUpdated = (io, data) => {
   const eventData = { ...data, timestamp: new Date() };
-  emitToAll(io, "test:updated", eventData);
+  emitToStudents(io, "test:updated", eventData);
   emitToPRs(io, "test:updated", eventData);
 };
 
 const emitTestDeleted = (io, data) => {
   const eventData = { ...data, timestamp: new Date() };
-  emitToAll(io, "test:deleted", eventData);
+  emitToStudents(io, "test:deleted", eventData);
   emitToPRs(io, "test:deleted", eventData);
 };
 
 const emitTestCompleted = (io, data) => {
   const eventData = { ...data, timestamp: new Date() };
-  emitToAll(io, "test:completed", eventData);
   emitToPRs(io, "test:completed", eventData);
 };
 
 const emitResourceAdded = (io, data) => {
   const eventData = { ...data, timestamp: new Date() };
-  emitToAll(io, "resource:added", eventData);
+  emitToStudents(io, "resource:added", eventData);
   emitToPRs(io, "resource:added", eventData);
 };
 
@@ -134,8 +124,8 @@ const emitPlacementDataUpdate = (io, action, data) => {
     data,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "placementDataUpdate", eventData);
+  emitToPOs(io, "placementDataUpdate", eventData);
+  emitToPRs(io, "placementDataUpdate", eventData);
 };
 
 const emitProfileUpdate = (io, action, data) => {
@@ -144,8 +134,9 @@ const emitProfileUpdate = (io, action, data) => {
     data,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "profileUpdate", eventData);
+  // Profile updates only relevant to PO/PR for monitoring
+  emitToPOs(io, "profileUpdate", eventData);
+  emitToPRs(io, "profileUpdate", eventData);
 };
 
 const emitCGPAUpdate = (io, action, data) => {
@@ -154,8 +145,8 @@ const emitCGPAUpdate = (io, action, data) => {
     data,
     timestamp: new Date(),
   };
-
-  emitToAll(io, "cgpaUpdate", eventData);
+  emitToPOs(io, "cgpaUpdate", eventData);
+  emitToPRs(io, "cgpaUpdate", eventData);
 };
 
 module.exports = {

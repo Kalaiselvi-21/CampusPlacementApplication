@@ -222,16 +222,14 @@ class NeonService {
         : [];
 
       if (roundId && selectedStudents.length > 0 && (await this.tableExists('selection_round_students'))) {
-        for (const studentId of selectedStudents) {
-          await this.executeRawQuery(
-            `
-            INSERT INTO selection_round_students (id, selection_round_id, student_id, selected_at)
-            VALUES (gen_random_uuid(), $1, $2, NOW())
-            ON CONFLICT (selection_round_id, student_id) DO NOTHING
-            `,
-            [roundId, studentId]
-          );
-        }
+        await this.executeRawQuery(
+          `
+          INSERT INTO selection_round_students (id, selection_round_id, student_id, selected_at)
+          SELECT gen_random_uuid(), $1, unnest($2::uuid[]), NOW()
+          ON CONFLICT (selection_round_id, student_id) DO NOTHING
+          `,
+          [roundId, selectedStudents]
+        );
       }
     }
 
@@ -1421,6 +1419,23 @@ class NeonService {
     );
 
     return parseInt(results[0].count) > 0;
+  }
+
+  /**
+   * Get all drive IDs a student has applied to — single query replacing N hasStudentApplied calls
+   */
+  async getAppliedDriveIdsForStudent(studentId) {
+    const connected = await this.checkConnection();
+    if (!connected) throw new Error('NeonDB not connected');
+
+    const { tableName, driveColumn, studentColumn } = await this.getApplicationsTableConfig();
+
+    const results = await this.executeRawQuery(
+      `SELECT ${driveColumn} AS drive_id FROM ${tableName} WHERE ${studentColumn} = $1`,
+      [studentId]
+    );
+
+    return new Set(results.map((r) => String(r.drive_id)));
   }
 
   /**

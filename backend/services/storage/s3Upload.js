@@ -1,4 +1,5 @@
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const fs = require("fs");
 
 let cachedClient = null;
 
@@ -48,8 +49,8 @@ const getClient = () => {
 };
 
 async function uploadMulterFileToS3(file, { prefix = "uploads", keyPrefix = "" } = {}) {
-  if (!file || !file.buffer) {
-    throw new Error("No file buffer available for S3 upload");
+  if (!file || (!file.buffer && !file.path)) {
+    throw new Error("No file data available for S3 upload (missing buffer and path)");
   }
 
   const bucket = getBucketName();
@@ -68,11 +69,15 @@ async function uploadMulterFileToS3(file, { prefix = "uploads", keyPrefix = "" }
   const keyBase = [normalizedPrefix, normalizedKeyPrefix].filter(Boolean).join("/");
   const key = `${keyBase}/${timePart}-${randomPart}-${safeName}`.replace(/\/{2,}/g, "/");
 
+  // Support both memory storage (buffer) and disk storage (path → stream)
+  const body = file.buffer || fs.createReadStream(file.path);
+
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: key,
-    Body: file.buffer,
+    Body: body,
     ContentType: file.mimetype,
+    ContentLength: file.size,
   });
 
   try {
@@ -86,6 +91,11 @@ async function uploadMulterFileToS3(file, { prefix = "uploads", keyPrefix = "" }
       );
     }
     throw error;
+  } finally {
+    // Clean up temp disk file if disk storage was used
+    if (!file.buffer && file.path) {
+      fs.unlink(file.path, () => {});
+    }
   }
 
   return {

@@ -102,7 +102,11 @@ const initializeS3 = () => {
 initializeS3();
 
 // Multer setup
-const storage = multer.memoryStorage();
+const os = require("os");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
