@@ -11,9 +11,13 @@ const normalizeRole = (role) => String(role || "").toLowerCase().replace(/\s+/g,
 const isPO = (user) => ["po", "placement_officer", "admin"].includes(normalizeRole(user?.role));
 const isPR = (user) => ["placement_representative", "pr"].includes(normalizeRole(user?.role));
 
-const storage = multer.memoryStorage();
+const os = require("os");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 const upload = multer({
-  storage: storage,
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   // ✅ ADDED: enforce safe file types at API layer too.
   fileFilter: (req, file, cb) => {

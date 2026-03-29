@@ -1,4 +1,5 @@
 const multer = require('multer');
+const os = require('os');
 const { auth: authMiddleware } = require('../../middleware/auth');
 const { importQuiz } = require('../../services/quizGateway');
 const neonService = require('../../services/database/neonService');
@@ -57,7 +58,12 @@ const formatNeonTest = (row) => ({
   updatedAt: row.updated_at,
 });
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+  }),
+});
 
 router.post('/', authMiddleware, async (req, res) => {
   try {

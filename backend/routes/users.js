@@ -27,8 +27,8 @@ const isPrivilegedCgpaUser = (req) =>
 const isLakshmiDebugUser = (req) => req.user.email === "lakshmiysc@gmail.com";
 
 const cleanupUploadedFile = (file) => {
-  if (file && file.path && fs.existsSync(file.path)) {
-    fs.unlinkSync(file.path);
+  if (file && file.path) {
+    fs.unlink(file.path, () => {});
   }
 };
 
@@ -195,36 +195,69 @@ router.post("/upload-cgpa", auth, upload.single("csvFile"), async (req, res) => 
       });
     }
 
-    let updatedCount = 0;
+    // Parse and validate all rows first (no DB calls yet)
+    const validRows = [];
     let errorCount = 0;
 
     for (const row of rows) {
       const rawRoll = extractRollNumber(row);
       const rawCgpa = extractCgpa(row);
-
-      if (!rawRoll || !rawCgpa) {
-        errorCount += 1;
-        continue;
-      }
-
-      const cleanRollNo = String(rawRoll).trim();
+      if (!rawRoll || !rawCgpa) { errorCount += 1; continue; }
+      const cleanRollNo = String(rawRoll).trim().toUpperCase();
       const cleanCgpa = parseFloat(rawCgpa);
+      if (Number.isNaN(cleanCgpa)) { errorCount += 1; continue; }
+      validRows.push({ rollNo: cleanRollNo, cgpa: cleanCgpa });
+    }
 
-      if (Number.isNaN(cleanCgpa)) {
-        errorCount += 1;
-        continue;
+    let updatedCount = 0;
+
+    if (validRows.length > 0) {
+      const rollNumbers = validRows.map((r) => r.rollNo);
+
+      // Single query: fetch all matching users by roll number
+      const matchedUsers = await neonService.executeRawQuery(
+        `
+        SELECT u.id, UPPER(COALESCE(up.roll_number, up.register_no, '')) AS roll_key
+        FROM users u
+        LEFT JOIN user_profiles up ON up.user_id = u.id
+        WHERE u.role = ANY($1)
+          AND UPPER(COALESCE(up.roll_number, up.register_no, '')) = ANY($2)
+        `,
+        [["student", "placement_representative"], rollNumbers]
+      );
+
+      const rollToUserId = new Map(matchedUsers.map((u) => [u.roll_key, u.id]));
+
+      // Bulk update user_profiles CGPA using unnest
+      const updatePairs = validRows
+        .filter((r) => rollToUserId.has(r.rollNo))
+        .map((r) => ({ userId: rollToUserId.get(r.rollNo), cgpa: r.cgpa }));
+
+      if (updatePairs.length > 0) {
+        await neonService.executeRawQuery(
+          `
+          UPDATE user_profiles AS up
+          SET cgpa = v.cgpa::numeric, updated_at = NOW()
+          FROM (SELECT unnest($1::uuid[]) AS uid, unnest($2::numeric[]) AS cgpa) AS v
+          WHERE up.user_id = v.uid
+          `,
+          [updatePairs.map((p) => p.userId), updatePairs.map((p) => p.cgpa)]
+        );
+        updatedCount = updatePairs.length;
       }
 
-      const user = await findUserByRollNumber(cleanRollNo);
+      errorCount += validRows.length - updatePairs.length;
 
-      if (user) {
-        await updateUserCgpa(user.id, cleanCgpa);
-        updatedCount += 1;
-      } else {
-        errorCount += 1;
-      }
-
-      await upsertCgpaReference(cleanRollNo, cleanCgpa);
+      // Bulk upsert cgpa_references using unnest
+      await neonService.executeRawQuery(
+        `
+        INSERT INTO cgpa_references (id, roll_number, cgpa, created_at, updated_at)
+        SELECT gen_random_uuid(), v.roll, v.cgpa, NOW(), NOW()
+        FROM (SELECT unnest($1::text[]) AS roll, unnest($2::numeric[]) AS cgpa) AS v
+        ON CONFLICT (roll_number) DO UPDATE SET cgpa = EXCLUDED.cgpa, updated_at = NOW()
+        `,
+        [validRows.map((r) => r.rollNo), validRows.map((r) => r.cgpa)]
+      );
     }
 
     cleanupUploadedFile(req.file);

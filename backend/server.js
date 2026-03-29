@@ -3,6 +3,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 const session = require("express-session");
 const passport = require("./config/passport");
 const placementConsentRoutes = require("./routes/placementConsent");
@@ -78,6 +79,36 @@ app.use(
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Rate limiting
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts, please try again after 15 minutes." },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many upload requests, please slow down." },
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please slow down." },
+});
+
+app.use("/api/auth", authLimiter);
+app.use("/api/users/upload-cgpa", uploadLimiter);
+app.use("/api/profile/upload", uploadLimiter);
+app.use("/api", generalLimiter);
 
 // Test route
 app.get("/api/test", (req, res) => {

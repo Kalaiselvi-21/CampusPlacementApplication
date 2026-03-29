@@ -9,10 +9,14 @@ const logger = require("../services/database/logger");
 const { emitPlacementDataUpdate } = require("../utils/socketUtils");
 const { uploadMulterFileToS3 } = require("../services/storage/s3Upload");
 
-const storage = multer.memoryStorage();
+const os = require("os");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 
 const upload = multer({
-  storage: storage,
+  storage,
   fileFilter: (req, file, cb) => {
     const allowedTypes = /csv|pdf/;
     const extname = allowedTypes.test(
