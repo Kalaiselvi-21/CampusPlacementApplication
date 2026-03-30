@@ -1,9 +1,9 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
-  const API_BASE = process.env.REACT_APP_API_BASE;
-
+  
 const PlacementConsent = () => {
   const [policy, setPolicy] = useState(null);
   const [hasAgreed, setHasAgreed] = useState(false);

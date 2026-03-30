@@ -1,8 +1,8 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 const normalizeAllowlistEntry = (entry = {}) => {
   const resolvedId = entry._id || entry.id;

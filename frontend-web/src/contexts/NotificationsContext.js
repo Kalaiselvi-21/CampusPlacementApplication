@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, {
   createContext,
   useCallback,
@@ -10,7 +11,6 @@ import axios from "axios";
 import socketService from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 const NotificationsContext = createContext(null);
 

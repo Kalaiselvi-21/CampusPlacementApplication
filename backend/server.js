@@ -23,9 +23,43 @@ process.env.QUIZ_LAUNCH_MODE = "expo";
 
 const app = express();
 const server = http.createServer(app);
+
+const normalizeOrigin = (value) => String(value || "").replace(/\/$/, "");
+const allowedOrigins = Array.from(
+  new Set(
+    [
+      process.env.CLIENT_URL,
+      process.env.FRONTEND_URL,
+      "https://placement-app-omega.vercel.app",
+      "http://localhost:3000",
+    ]
+      .filter(Boolean)
+      .map(normalizeOrigin),
+  ),
+);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (allowedOrigins.includes(normalizedOrigin)) {
+    return true;
+  }
+
+  return /^https:\/\/campus-placement-application(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(
+    normalizedOrigin,
+  );
+};
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "https://placement-app-omega.vercel.app",
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by Socket.IO CORS"));
+    },
     methods: ["GET", "POST"],
   },
 });
@@ -34,21 +68,14 @@ const io = new Server(server, {
 app.set("io", io);
 
 // Middleware
-// Allow frontend (3000) and secured quiz app (19006) to call the API
-const allowedOrigins = [
-  (process.env.CLIENT_URL || "https://placement-app-omega.vercel.app").replace(/\/$/, ""),
-  (process.env.EXPO_QUIZ_URL || "https://placement-app-sewb.vercel.app/").replace(/\/$/, ""),
-  "https://campus-placement-application-r9h3hnq3v-nifo.vercel.app",
-];
+// Allow the main frontend, local development, and Vercel previews to call the API.
+allowedOrigins.push(normalizeOrigin(process.env.EXPO_QUIZ_URL || "https://placement-app-sewb.vercel.app/"));
+allowedOrigins.push("https://campus-placement-application-r9h3hnq3v-nifo.vercel.app");
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // allow same-origin/non-browser
-      const o = origin.replace(/\/$/, "");
-      // Allow exact matches or any nifo.vercel.app preview deployment
-      if (allowedOrigins.includes(o)) return callback(null, true);
-      if (o.endsWith(".vercel.app")) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

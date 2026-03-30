@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -6,8 +7,7 @@ import toast from "react-hot-toast";
 import CarouselBanner from "./CarouselBanner";
 
 const PRDashboard = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user } = useAuth();
+    const { user } = useAuth();
   const navigate = useNavigate();
   const [allDrives, setAllDrives] = useState([]);
   const [eligibleDrives, setEligibleDrives] = useState([]);

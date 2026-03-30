@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import axios from "axios";
@@ -6,8 +7,7 @@ import { useNavigate } from "react-router-dom";
 import CarouselBanner from "./CarouselBanner";
 
 const StudentDashboard = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user, updateUser, loading: authLoading } = useAuth();
+    const { user, updateUser, loading: authLoading } = useAuth();
   const [eligibleDrives, setEligibleDrives] = useState([]);
   const [allDrives, setAllDrives] = useState([]);
   const [loading, setLoading] = useState(true);

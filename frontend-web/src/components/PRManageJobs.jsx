@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -5,8 +6,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 const PRManageJobs = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user } = useAuth();
+    const { user } = useAuth();
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);

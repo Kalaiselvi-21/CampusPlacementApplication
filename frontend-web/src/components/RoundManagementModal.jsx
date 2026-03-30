@@ -1,8 +1,8 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 const RoundManagementModal = ({ isOpen, onClose, job, roundIndex, onRefresh, user }) => {
   const [loading, setLoading] = useState(false);

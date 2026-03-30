@@ -1,11 +1,11 @@
+import { API_BASE } from '../config/api';
 import React, { useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 
 const ForgotPassword = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const [email, setEmail] = useState('');
+    const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {

@@ -1,9 +1,9 @@
+import { API_BASE } from '../config/api';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocketConnection, useSocketEvent } from '../hooks/useSocket';
 import NotificationToast from './NotificationToast';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 export default function PlacementPreparation() {
   const { user } = useAuth();

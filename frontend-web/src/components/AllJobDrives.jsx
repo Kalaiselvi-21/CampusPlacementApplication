@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -14,7 +15,6 @@ import {
   useRoundUpdates,
 } from "../hooks/useSocket";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 const normalizeDepartment = (dept) => {
   if (!dept) return null;

@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -5,8 +6,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 const EditProfile = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user, updateUser, logout } = useAuth();
+    const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);

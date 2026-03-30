@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -5,8 +6,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 
 const Login = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const navigate = useNavigate();
+    const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
   const [formData, setFormData] = useState({

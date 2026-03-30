@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -6,8 +7,7 @@ import toast from "react-hot-toast";
 import { useProfileUpdates, useSocketConnection } from "../hooks/useSocket";
 
 const CompleteProfile = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user, updateUser } = useAuth();
+    const { user, updateUser } = useAuth();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [completionStatus, setCompletionStatus] = useState(null);
