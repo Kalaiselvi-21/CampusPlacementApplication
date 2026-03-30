@@ -10,6 +10,7 @@ const EditProfile = () => {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const isPO = user?.role === "placement_officer" || user?.role === "po";
 
   // Form data states matching CompleteProfile
   const [basicInfo, setBasicInfo] = useState({
@@ -31,13 +32,17 @@ const EditProfile = () => {
     phoneNumber: "",
     linkedinUrl: "",
     githubUrl: "",
-    resumeLink: "",
-    aadharLink: "",
-    panLink: "",
+    resumeDriveLink: "",
+    panCardDriveLink: "",
+    aadharCardDriveLink: "",
     currentBacklogs: 0,
     historyOfBacklogs: [], // This was missing
     aboutMe: "",
     skills: "",
+    photo: null,
+    resume: null,
+    collegeIdCard: null,
+    marksheets: [],
   });
 
   const [files, setFiles] = useState({
@@ -86,14 +91,20 @@ const EditProfile = () => {
             degree: userData.profile.degree || "",
             department: userData.profile.department || "",
             graduationYear: userData.profile.graduationYear || "",
-            cgpa: userData.profile.cgpa || "",
+            cgpa:
+              userData.profile.cgpa !== null &&
+              userData.profile.cgpa !== undefined
+                ? userData.profile.cgpa
+                : userData.cgpa !== null && userData.cgpa !== undefined
+                  ? userData.cgpa
+                  : "",
             address: userData.profile.address || "",
             phoneNumber: userData.profile.phoneNumber || "",
             linkedinUrl: userData.profile.linkedinUrl || "",
             githubUrl: userData.profile.githubUrl || "",
-            resumeLink: userData.profile.resumeLink || "",
-            aadharLink: userData.profile.aadharLink || "",
-            panLink: userData.profile.panLink || "",
+            resumeDriveLink: userData.profile.resumeDriveLink || "",
+            panCardDriveLink: userData.profile.panCardDriveLink || "",
+            aadharCardDriveLink: userData.profile.aadharCardDriveLink || "",
             currentBacklogs: userData.profile.currentBacklogs || 0,
             historyOfBacklogs: userData.profile.historyOfBacklogs || [],
             aboutMe: userData.profile.aboutMe || "",
@@ -110,6 +121,10 @@ const EditProfile = () => {
             tenthPercentage: userData.profile.tenthPercentage || "",
             twelfthPercentage: userData.profile.twelfthPercentage || "",
             diplomaPercentage: userData.profile.diplomaPercentage || "",
+            photo: userData.profile.photo || null,
+            resume: userData.profile.resume || null,
+            collegeIdCard: userData.profile.collegeIdCard || null,
+            marksheets: userData.profile.marksheets || [],
           });
         }
       } catch (error) {
@@ -120,7 +135,7 @@ const EditProfile = () => {
 
     // Always fetch fresh data from API to get all profile fields
     fetchUserProfile();
-  }, []);
+  }, [API_BASE]); // Ensure it runs on mount and if API_BASE changes
 
   const handleBasicInfoChange = (e) => {
     const { name, value } = e.target;
@@ -156,13 +171,9 @@ const EditProfile = () => {
   };
 
   const submitBasicInfo = async () => {
-    if (!basicInfo.cgpa && basicInfo.cgpa !== 0) {
+    // Only require CGPA validation on frontend if the user is a PO
+    if (isPO && !basicInfo.cgpa && basicInfo.cgpa !== 0) {
       toast.error("CGPA is required");
-      return;
-    }
-
-    if (!basicInfo.resumeLink || !basicInfo.aadharLink || !basicInfo.panLink) {
-      toast.error("Resume URL, Aadhaar URL, and PAN URL are required");
       return;
     }
 
@@ -199,7 +210,8 @@ const EditProfile = () => {
       const updatedUser = {
         ...user,
         ...(responseUser || {}),
-        placementPolicyConsent: responseUser?.placementPolicyConsent || user.placementPolicyConsent
+        placementPolicyConsent:
+          responseUser?.placementPolicyConsent || user.placementPolicyConsent,
       };
       updateUser(updatedUser);
       toast.success("Basic information saved!");
@@ -285,19 +297,29 @@ const EditProfile = () => {
       const updatedUser = {
         ...user,
         ...(responseUser || {}),
-        placementPolicyConsent: responseUser?.placementPolicyConsent || user.placementPolicyConsent
+        placementPolicyConsent:
+          responseUser?.placementPolicyConsent || user.placementPolicyConsent,
       };
       updateUser(updatedUser);
 
       const hasConsented = updatedUser.placementPolicyConsent?.hasAgreed;
-      const isStudentOrPR = updatedUser.role === 'student' || updatedUser.role === 'placement_representative' || updatedUser.role === 'pr';
+      const isStudentOrPR =
+        updatedUser.role === "student" ||
+        updatedUser.role === "placement_representative" ||
+        updatedUser.role === "pr";
 
       if (isStudentOrPR && !hasConsented) {
         navigate("/placement-consent");
       } else {
-        if (updatedUser.role === 'placement_representative' || updatedUser.role === 'pr') {
+        if (
+          updatedUser.role === "placement_representative" ||
+          updatedUser.role === "pr"
+        ) {
           navigate("/pr-dashboard");
-        } else if (updatedUser.role === 'placement_officer' || updatedUser.role === 'po') {
+        } else if (
+          updatedUser.role === "placement_officer" ||
+          updatedUser.role === "po"
+        ) {
           navigate("/po-dashboard");
         } else {
           navigate("/dashboard");
@@ -421,6 +443,7 @@ const EditProfile = () => {
             name="dateOfBirth"
             value={basicInfo.dateOfBirth}
             onChange={handleBasicInfoChange}
+            max={new Date().toISOString().split("T")[0]}
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             required
           />
@@ -476,7 +499,7 @@ const EditProfile = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            12th Percentage *
+            12th Percentage (Optional)
           </label>
           <input
             type="number"
@@ -488,7 +511,6 @@ const EditProfile = () => {
             onWheel={(e) => e.target.blur()}
             onChange={handleBasicInfoChange}
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
           />
         </div>
 
@@ -568,10 +590,12 @@ const EditProfile = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            CGPA *{" "}
-            {(user?.role === "student" ||
-              user?.role === "placement_representative") &&
-              "(Cannot be edited)"}
+            CGPA {isPO && "*"}{" "}
+            {user?.role === "student" ||
+            user?.role === "placement_representative" ||
+            user?.role === "pr"
+              ? "(View only)"
+              : "(Editable by PO)"}
           </label>
           <input
             type="number"
@@ -585,9 +609,10 @@ const EditProfile = () => {
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
             disabled={
               user?.role === "student" ||
-              user?.role === "placement_representative"
+              user?.role === "placement_representative" ||
+              user?.role === "pr"
             }
-            required
+            required={isPO}
           />
         </div>
 
@@ -637,6 +662,51 @@ const EditProfile = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700">
+            Resume Drive Link *
+          </label>
+          <input
+            type="url"
+            name="resumeDriveLink"
+            value={basicInfo.resumeDriveLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/file/d/.../view"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            PAN Card Drive Link *
+          </label>
+          <input
+            type="url"
+            name="panCardDriveLink"
+            value={basicInfo.panCardDriveLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/file/d/.../view"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Aadhar Card Drive Link *
+          </label>
+          <input
+            type="url"
+            name="aadharCardDriveLink"
+            value={basicInfo.aadharCardDriveLink}
+            onChange={handleBasicInfoChange}
+            placeholder="https://drive.google.com/file/d/.../view"
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
             Current Backlogs *
           </label>
           <input
@@ -647,52 +717,6 @@ const EditProfile = () => {
             onWheel={(e) => e.target.blur()}
             onChange={handleBasicInfoChange}
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Resume URL *
-          </label>
-          <input
-            type="url"
-            name="resumeLink"
-            value={basicInfo.resumeLink}
-            onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/... or direct resume link"
-            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Aadhaar Card URL *
-          </label>
-          <input
-            type="url"
-            name="aadharLink"
-            value={basicInfo.aadharLink}
-            onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/... or direct Aadhaar link"
-            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            PAN Card URL *
-          </label>
-          <input
-            type="url"
-            name="panLink"
-            value={basicInfo.panLink}
-            onChange={handleBasicInfoChange}
-            placeholder="https://drive.google.com/... or direct PAN link"
-            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-            required
           />
         </div>
 
@@ -749,33 +773,34 @@ const EditProfile = () => {
               </button>
             </div>
 
-            {basicInfo.historyOfBacklogs && basicInfo.historyOfBacklogs.length > 0 && (
-              <div className="mt-3">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">
-                  Added Backlogs:
-                </h4>
-                <div className="space-y-2">
-                  {basicInfo.historyOfBacklogs.map((backlog, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between bg-gray-50 p-2 rounded"
-                    >
-                      <span className="text-sm">
-                        {backlog.subject} - {backlog.semester} (
-                        {backlog.cleared ? "Cleared" : "Not Cleared"})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeBacklogFromHistory(index)}
-                        className="text-red-500 hover:text-red-700"
+            {basicInfo.historyOfBacklogs &&
+              basicInfo.historyOfBacklogs.length > 0 && (
+                <div className="mt-3">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Added Backlogs:
+                  </h4>
+                  <div className="space-y-2">
+                    {basicInfo.historyOfBacklogs.map((backlog, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between bg-gray-50 p-2 rounded"
                       >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                        <span className="text-sm">
+                          {backlog.subject} - {backlog.semester} (
+                          {backlog.cleared ? "Cleared" : "Not Cleared"})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeBacklogFromHistory(index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
         </div>
 
@@ -857,9 +882,17 @@ const EditProfile = () => {
             accept="image/jpeg, image/jpg, image/png"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
           />
-          {user?.profile?.photo && (
+          {(basicInfo.photo || user?.profile?.photo) && (
             <div className="text-sm text-green-600 mt-1">
-              Current: {user.profile.photo}
+              Current:{" "}
+              <a
+                href={basicInfo.photo || user.profile.photo}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                View Photo
+              </a>
             </div>
           )}
         </div>
@@ -875,9 +908,17 @@ const EditProfile = () => {
             accept=".pdf,.doc,.docx"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
           />
-          {user?.profile?.resume && (
+          {(basicInfo.resume || user?.profile?.resume) && (
             <div className="text-sm text-green-600 mt-1">
-              Current: {user.profile.resume}
+              Current:{" "}
+              <a
+                href={basicInfo.resume || user.profile.resume}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                View Resume
+              </a>
             </div>
           )}
         </div>
@@ -893,9 +934,17 @@ const EditProfile = () => {
             accept="image/jpeg, image/jpg, image/png, application/pdf"
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
           />
-          {user?.profile?.collegeIdCard && (
+          {(basicInfo.collegeIdCard || user?.profile?.collegeIdCard) && (
             <div className="text-sm text-green-600 mt-1">
-              Current: {user.profile.collegeIdCard}
+              Current:{" "}
+              <a
+                href={basicInfo.collegeIdCard || user.profile.collegeIdCard}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                View ID Card
+              </a>
             </div>
           )}
         </div>
@@ -912,9 +961,29 @@ const EditProfile = () => {
             multiple
             className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
           />
-          {user?.profile?.marksheets?.length > 0 && (
+          {(basicInfo.marksheets?.length > 0 ||
+            user?.profile?.marksheets?.length > 0) && (
             <div className="text-sm text-green-600 mt-1">
-              Current: {user.profile.marksheets.length} files uploaded
+              <p className="font-medium mb-1">
+                Current:{" "}
+                {(basicInfo.marksheets || user.profile.marksheets).length} files
+                uploaded
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(basicInfo.marksheets || user.profile.marksheets).map(
+                  (url, index) => (
+                    <a
+                      key={index}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded hover:bg-green-100 underline text-xs"
+                    >
+                      View Marksheet {index + 1}
+                    </a>
+                  ),
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -960,7 +1029,9 @@ const EditProfile = () => {
                   <h1 className="text-2xl font-bold text-gray-900">
                     Edit Profile
                   </h1>
-                  <p className="text-gray-600">Update your profile information</p>
+                  <p className="text-gray-600">
+                    Update your profile information
+                  </p>
                 </div>
               </div>
               <button
@@ -1034,7 +1105,7 @@ const EditProfile = () => {
         </div>
       </div>
 
-          {/* Delete Account Modal */}
+      {/* Delete Account Modal */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">

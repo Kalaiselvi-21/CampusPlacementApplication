@@ -4,9 +4,9 @@
  * NeonDB is the single source of truth
  */
 
-const { sequelize } = require('../../config/neonConnection');
-const logger = require('./logger');
-const bcrypt = require('bcryptjs');
+const { sequelize } = require("../../config/neonConnection");
+const logger = require("./logger");
+const bcrypt = require("bcryptjs");
 
 class NeonService {
   constructor() {
@@ -14,26 +14,37 @@ class NeonService {
     this.isConnected = false;
     this.connectionChecked = false;
     this.tableColumnsCache = new Map();
-    this.enableSqlLogs = String(process.env.NEON_SQL_LOGS ?? 'true').toLowerCase() !== 'false';
+    this.enableSqlLogs =
+      String(process.env.NEON_SQL_LOGS ?? "true").toLowerCase() !== "false";
 
-    if (this.enableSqlLogs && this.sequelize && !this.sequelize.__neonLoggingWrapped) {
+    if (
+      this.enableSqlLogs &&
+      this.sequelize &&
+      !this.sequelize.__neonLoggingWrapped
+    ) {
       const originalQuery = this.sequelize.query.bind(this.sequelize);
 
       this.sequelize.query = async (...args) => {
-        const sqlPreview = typeof args[0] === 'string'
-          ? args[0].replace(/\s+/g, ' ').trim().slice(0, 180)
-          : 'SQL query';
+        const sqlPreview =
+          typeof args[0] === "string"
+            ? args[0].replace(/\s+/g, " ").trim().slice(0, 180)
+            : "SQL query";
         const startedAt = Date.now();
 
-        logger.logAttempt('NEON', 'SQL', 'Query', sqlPreview);
+        logger.logAttempt("NEON", "SQL", "Query", sqlPreview);
 
         try {
           const result = await originalQuery(...args);
           const duration = Date.now() - startedAt;
-          logger.logSuccess('NEON', 'SQL', 'Query', `Completed in ${duration}ms`);
+          logger.logSuccess(
+            "NEON",
+            "SQL",
+            "Query",
+            `Completed in ${duration}ms`,
+          );
           return result;
         } catch (error) {
-          logger.logFailure('NEON', 'SQL', 'Query', error?.message || error);
+          logger.logFailure("NEON", "SQL", "Query", error?.message || error);
           throw error;
         }
       };
@@ -68,7 +79,7 @@ class NeonService {
   async executeRawQuery(sql, params = []) {
     try {
       const [results] = await sequelize.query(sql, {
-        bind: params
+        bind: params,
       });
       return results;
     } catch (error) {
@@ -89,7 +100,7 @@ class NeonService {
       `,
       {
         bind: [tableName],
-      }
+      },
     );
 
     const columns = new Set((rows || []).map((row) => row.column_name));
@@ -103,7 +114,7 @@ class NeonService {
   }
 
   async getApplicationsTableConfig() {
-    const candidates = ['job_drive_applications', 'job_applications'];
+    const candidates = ["job_drive_applications", "job_applications"];
 
     for (const tableName of candidates) {
       const columns = await this.getTableColumns(tableName);
@@ -111,16 +122,16 @@ class NeonService {
         continue;
       }
 
-      const driveColumn = columns.has('job_drive_id')
-        ? 'job_drive_id'
-        : columns.has('drive_id')
-          ? 'drive_id'
+      const driveColumn = columns.has("job_drive_id")
+        ? "job_drive_id"
+        : columns.has("drive_id")
+          ? "drive_id"
           : null;
 
-      const studentColumn = columns.has('student_id')
-        ? 'student_id'
-        : columns.has('user_id')
-          ? 'user_id'
+      const studentColumn = columns.has("student_id")
+        ? "student_id"
+        : columns.has("user_id")
+          ? "user_id"
           : null;
 
       if (driveColumn && studentColumn) {
@@ -128,11 +139,13 @@ class NeonService {
       }
     }
 
-    throw new Error('job applications schema missing drive/student reference columns');
+    throw new Error(
+      "job applications schema missing drive/student reference columns",
+    );
   }
 
   async getSelectionRoundsForDrive(driveId) {
-    if (!(await this.tableExists('selection_rounds'))) {
+    if (!(await this.tableExists("selection_rounds"))) {
       return [];
     }
 
@@ -143,7 +156,7 @@ class NeonService {
       WHERE job_drive_id = $1
       ORDER BY round_order ASC NULLS LAST, created_at ASC
       `,
-      [driveId]
+      [driveId],
     );
 
     if (rounds.length === 0) {
@@ -151,7 +164,7 @@ class NeonService {
     }
 
     let selectedRows = [];
-    if (await this.tableExists('selection_round_students')) {
+    if (await this.tableExists("selection_round_students")) {
       const roundIds = rounds.map((round) => round.id);
       selectedRows = await this.executeRawQuery(
         `
@@ -160,7 +173,7 @@ class NeonService {
         WHERE selection_round_id = ANY($1)
         ORDER BY selected_at ASC
         `,
-        [roundIds]
+        [roundIds],
       );
     }
 
@@ -175,22 +188,25 @@ class NeonService {
     return rounds.map((round) => ({
       _id: round.id,
       id: round.id,
-      name: round.round_name || '',
-      details: round.round_details || '',
+      name: round.round_name || "",
+      details: round.round_details || "",
       date: round.round_date || null,
       time: round.round_time || null,
-      status: round.status || 'pending',
+      status: round.status || "pending",
       selectedStudents: selectedByRound.get(round.id) || [],
       roundOrder: round.round_order ?? null,
     }));
   }
 
   async replaceSelectionRounds(driveId, selectionRounds = []) {
-    if (!(await this.tableExists('selection_rounds'))) {
+    if (!(await this.tableExists("selection_rounds"))) {
       return [];
     }
 
-    await this.executeRawQuery(`DELETE FROM selection_rounds WHERE job_drive_id = $1`, [driveId]);
+    await this.executeRawQuery(
+      `DELETE FROM selection_rounds WHERE job_drive_id = $1`,
+      [driveId],
+    );
 
     for (let index = 0; index < selectionRounds.length; index += 1) {
       const round = selectionRounds[index] || {};
@@ -205,19 +221,23 @@ class NeonService {
         `,
         [
           driveId,
-          round.name || '',
-          round.details || '',
+          round.name || "",
+          round.details || "",
           round.date || null,
           round.time || null,
-          round.status || 'pending',
+          round.status || "pending",
           index,
-        ]
+        ],
       );
 
       const roundId = inserted[0]?.id;
       const selectedStudents = Array.isArray(round.selectedStudents)
         ? round.selectedStudents.filter(
-            (studentId) => typeof studentId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(studentId)
+            (studentId) =>
+              typeof studentId === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                studentId,
+              ),
           )
         : [];
 
@@ -237,13 +257,13 @@ class NeonService {
   }
 
   async getPlacedStudentsForDrive(driveId) {
-    if (!(await this.tableExists('placed_students'))) {
+    if (!(await this.tableExists("placed_students"))) {
       return [];
     }
 
-    const columns = await this.getTableColumns('placed_students');
-    const selectStudentId = columns.has('student_id') ? ', student_id' : '';
-    const selectStatus = columns.has('status') ? ', status' : '';
+    const columns = await this.getTableColumns("placed_students");
+    const selectStudentId = columns.has("student_id") ? ", student_id" : "";
+    const selectStatus = columns.has("status") ? ", status" : "";
 
     const rows = await this.executeRawQuery(
       `
@@ -252,63 +272,88 @@ class NeonService {
       WHERE job_drive_id = $1
       ORDER BY added_at ASC, created_at ASC
       `,
-      [driveId]
+      [driveId],
     );
 
     return rows.map((row) => ({
       _id: row.id,
       id: row.id,
       studentId: row.student_id || null,
-      name: row.student_name || 'N/A',
-      rollNumber: row.roll_number || 'N/A',
-      department: row.department || '',
-      email: row.email || 'N/A',
-      mobileNumber: row.mobile_number || '',
+      name: row.student_name || "N/A",
+      rollNumber: row.roll_number || "N/A",
+      department: row.department || "",
+      email: row.email || "N/A",
+      mobileNumber: row.mobile_number || "",
       cgpa: row.cgpa || 0,
       addedBy: row.added_by || null,
       addedAt: row.added_at || null,
-      status: row.status || 'placed',
+      status: row.status || "placed",
     }));
   }
 
-  async replacePlacedStudents(driveId, companyName, placedStudents = [], addedBy = null) {
-    if (!(await this.tableExists('placed_students'))) {
+  async replacePlacedStudents(
+    driveId,
+    companyName,
+    placedStudents = [],
+    addedBy = null,
+  ) {
+    if (!(await this.tableExists("placed_students"))) {
       return [];
     }
 
-    const columns = await this.getTableColumns('placed_students');
+    const columns = await this.getTableColumns("placed_students");
 
-    // Before deleting, collect old student IDs if the schema supports this column.
-    const oldStudentIds = [];
-    if (columns.has('student_id')) {
-      const oldRows = await this.executeRawQuery(
-        `SELECT student_id FROM placed_students WHERE job_drive_id = $1 AND student_id IS NOT NULL`,
-        [driveId]
-      );
-      oldStudentIds.push(...oldRows.map((r) => r.student_id).filter(Boolean));
-    }
+    // Before deleting, collect the old student IDs so we can unmark them if needed
+    const oldRows = await this.executeRawQuery(
+      `SELECT student_id FROM placed_students WHERE job_drive_id = $1 AND student_id IS NOT NULL`,
+      [driveId],
+    );
+    const oldStudentIds = oldRows.map((r) => r.student_id).filter(Boolean);
 
-    await this.executeRawQuery(`DELETE FROM placed_students WHERE job_drive_id = $1`, [driveId]);
+    await this.executeRawQuery(
+      `DELETE FROM placed_students WHERE job_drive_id = $1`,
+      [driveId],
+    );
 
     // Collect new student IDs to mark as placed
     const newStudentIds = [];
 
     for (const student of placedStudents) {
-      const fieldNames = ['id', 'job_drive_id', 'company_name', 'student_name', 'roll_number', 'department', 'email', 'mobile_number', 'cgpa'];
-      const valueSql = ['gen_random_uuid()', '$1', '$2', '$3', '$4', '$5', '$6', '$7', '$8'];
+      const fieldNames = [
+        "id",
+        "job_drive_id",
+        "company_name",
+        "student_name",
+        "roll_number",
+        "department",
+        "email",
+        "mobile_number",
+        "cgpa",
+      ];
+      const valueSql = [
+        "gen_random_uuid()",
+        "$1",
+        "$2",
+        "$3",
+        "$4",
+        "$5",
+        "$6",
+        "$7",
+        "$8",
+      ];
       const bind = [
         driveId,
-        companyName || '',
-        student.name || 'N/A',
-        student.rollNumber || 'N/A',
-        student.department || '',
-        student.email || '',
-        student.mobileNumber || '',
+        companyName || "",
+        student.name || "N/A",
+        student.rollNumber || "N/A",
+        student.department || "",
+        student.email || "",
+        student.mobileNumber || "",
         student.cgpa || 0,
       ];
 
-      if (columns.has('student_id')) {
-        fieldNames.push('student_id');
+      if (columns.has("student_id")) {
+        fieldNames.push("student_id");
         bind.push(student.studentId || null);
         valueSql.push(`$${bind.length}`);
         if (student.studentId) {
@@ -316,57 +361,60 @@ class NeonService {
         }
       }
 
-      if (columns.has('status')) {
-        fieldNames.push('status');
-        bind.push(student.status || 'placed');
+      if (columns.has("status")) {
+        fieldNames.push("status");
+        bind.push(student.status || "placed");
         valueSql.push(`$${bind.length}`);
       }
 
-      if (columns.has('added_by')) {
-        fieldNames.push('added_by');
+      if (columns.has("added_by")) {
+        fieldNames.push("added_by");
         bind.push(student.addedBy || addedBy || null);
         valueSql.push(`$${bind.length}`);
       }
 
-      if (columns.has('added_at')) {
-        fieldNames.push('added_at');
+      if (columns.has("added_at")) {
+        fieldNames.push("added_at");
         bind.push(student.addedAt || new Date());
         valueSql.push(`$${bind.length}`);
       }
 
-      if (columns.has('created_at')) {
-        fieldNames.push('created_at');
-        valueSql.push('NOW()');
+      if (columns.has("created_at")) {
+        fieldNames.push("created_at");
+        valueSql.push("NOW()");
       }
 
-      if (columns.has('updated_at')) {
-        fieldNames.push('updated_at');
-        valueSql.push('NOW()');
+      if (columns.has("updated_at")) {
+        fieldNames.push("updated_at");
+        valueSql.push("NOW()");
       }
 
       await this.executeRawQuery(
-        `INSERT INTO placed_students (${fieldNames.join(', ')}) VALUES (${valueSql.join(', ')})`,
-        bind
+        `INSERT INTO placed_students (${fieldNames.join(", ")}) VALUES (${valueSql.join(", ")})`,
+        bind,
       );
     }
 
     // Update user_profiles for newly placed students
     if (newStudentIds.length > 0) {
-      const profileColumns = await this.getTableColumns('user_profiles');
-      const hasPlacementStatus = profileColumns.has('placement_status');
-      const hasIsPlaced = profileColumns.has('is_placed');
-      const hasPlacedCompany = profileColumns.has('placed_company');
+      const profileColumns = await this.getTableColumns("user_profiles");
+      const hasPlacementStatus = profileColumns.has("placement_status");
+      const hasIsPlaced = profileColumns.has("is_placed");
+      const hasPlacedCompany = profileColumns.has("placed_company");
 
       if (hasPlacementStatus || hasIsPlaced || hasPlacedCompany) {
         const setParts = [];
         if (hasPlacementStatus) setParts.push(`placement_status = 'placed'`);
         if (hasIsPlaced) setParts.push(`is_placed = true`);
-        if (hasPlacedCompany) setParts.push(`placed_company = '${(companyName || '').replace(/'/g, "''")}'`);
+        if (hasPlacedCompany)
+          setParts.push(
+            `placed_company = '${(companyName || "").replace(/'/g, "''")}'`,
+          );
         setParts.push(`updated_at = NOW()`);
 
         await this.executeRawQuery(
-          `UPDATE user_profiles SET ${setParts.join(', ')} WHERE user_id = ANY($1::uuid[])`,
-          [newStudentIds]
+          `UPDATE user_profiles SET ${setParts.join(", ")} WHERE user_id = ANY($1::uuid[])`,
+          [newStudentIds],
         );
       }
     }
@@ -374,27 +422,30 @@ class NeonService {
     // Unmark students who were removed from placed list (no longer in placed_students for this drive)
     // Only unmark if they're not placed in any other drive
     if (oldStudentIds.length > 0) {
-      const removedIds = oldStudentIds.filter((id) => !newStudentIds.includes(id));
+      const removedIds = oldStudentIds.filter(
+        (id) => !newStudentIds.includes(id),
+      );
       if (removedIds.length > 0) {
-        const profileColumns = await this.getTableColumns('user_profiles');
-        const hasPlacementStatus = profileColumns.has('placement_status');
-        const hasIsPlaced = profileColumns.has('is_placed');
+        const profileColumns = await this.getTableColumns("user_profiles");
+        const hasPlacementStatus = profileColumns.has("placement_status");
+        const hasIsPlaced = profileColumns.has("is_placed");
 
         if (hasPlacementStatus || hasIsPlaced) {
           for (const studentId of removedIds) {
             // Check if still placed in another drive
             const stillPlaced = await this.executeRawQuery(
               `SELECT 1 FROM placed_students WHERE student_id = $1 LIMIT 1`,
-              [studentId]
+              [studentId],
             );
             if (stillPlaced.length === 0) {
               const setParts = [];
-              if (hasPlacementStatus) setParts.push(`placement_status = 'unplaced'`);
+              if (hasPlacementStatus)
+                setParts.push(`placement_status = 'unplaced'`);
               if (hasIsPlaced) setParts.push(`is_placed = false`);
               setParts.push(`updated_at = NOW()`);
               await this.executeRawQuery(
-                `UPDATE user_profiles SET ${setParts.join(', ')} WHERE user_id = $1`,
-                [studentId]
+                `UPDATE user_profiles SET ${setParts.join(", ")} WHERE user_id = $1`,
+                [studentId],
               );
             }
           }
@@ -413,10 +464,11 @@ class NeonService {
   async findUserByEmail(email) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT
         id, name, email, password, role, is_verified,
         verification_token, verification_token_expires,
@@ -439,9 +491,11 @@ class NeonService {
       FROM v_users_complete
       WHERE email = $1
       LIMIT 1
-    `, {
-      bind: [email]
-    });
+    `,
+      {
+        bind: [email],
+      },
+    );
 
     if (results.length === 0) {
       return null;
@@ -456,10 +510,11 @@ class NeonService {
   async findUserById(userId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT
         id, name, email, password, role, is_verified,
         verification_token, verification_token_expires,
@@ -484,9 +539,11 @@ class NeonService {
       FROM v_users_complete
       WHERE id = $1
       LIMIT 1
-    `, {
-      bind: [userId]
-    });
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     if (results.length === 0) {
       return null;
@@ -501,7 +558,7 @@ class NeonService {
   async updateUserProfile(userId, profileData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     // Build dynamic UPDATE query
@@ -544,13 +601,13 @@ class NeonService {
 
     const sql = `
       UPDATE user_profiles 
-      SET ${fields.join(', ')}
+      SET ${fields.join(", ")}
       WHERE user_id = $${paramIndex}
       RETURNING *
     `;
 
     const [results] = await sequelize.query(sql, {
-      bind: values
+      bind: values,
     });
 
     return results[0];
@@ -562,11 +619,12 @@ class NeonService {
   async updateUserVerification(userId, isVerified) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     try {
-      const [result] = await sequelize.query(`
+      const [result] = await sequelize.query(
+        `
         UPDATE users 
         SET is_verified = $1, 
             verification_token = NULL,
@@ -574,17 +632,21 @@ class NeonService {
             updated_at = NOW()
         WHERE id = $2
         RETURNING id, is_verified
-      `, {
-        bind: [isVerified, userId]
-      });
+      `,
+        {
+          bind: [isVerified, userId],
+        },
+      );
 
       if (result.length === 0) {
-        throw new Error(`User with ID ${userId} not found for verification update`);
+        throw new Error(
+          `User with ID ${userId} not found for verification update`,
+        );
       }
 
       return true;
     } catch (error) {
-      console.error('[NEON] Error in updateUserVerification:', error.message);
+      console.error("[NEON] Error in updateUserVerification:", error.message);
       throw error;
     }
   }
@@ -595,37 +657,43 @@ class NeonService {
   async updateOTPVerification(userId, otpData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     // Check if verification_status record exists
-    const [existing] = await sequelize.query(`
+    const [existing] = await sequelize.query(
+      `
       SELECT id FROM verification_status WHERE user_id = $1
-    `, {
-      bind: [userId]
-    });
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     if (existing.length === 0) {
       // Insert new record
-      await sequelize.query(`
+      await sequelize.query(
+        `
         INSERT INTO verification_status (
           id, user_id, otp_verified, is_verified, otp_code, otp_expires, 
           otp_attempts, otp_resend_count, last_otp_sent, created_at, updated_at
         ) VALUES (
           gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()
         )
-      `, {
-        bind: [
-          userId,
-          otpData.otp_verified || false,
-          otpData.is_verified || false,
-          otpData.otp_code || null,
-          otpData.otp_expires || null,
-          otpData.otp_attempts || 0,
-          otpData.otp_resend_count || 0,
-          otpData.last_otp_sent || new Date()
-        ]
-      });
+      `,
+        {
+          bind: [
+            userId,
+            otpData.otp_verified || false,
+            otpData.is_verified || false,
+            otpData.otp_code || null,
+            otpData.otp_expires || null,
+            otpData.otp_attempts || 0,
+            otpData.otp_resend_count || 0,
+            otpData.last_otp_sent || new Date(),
+          ],
+        },
+      );
     } else {
       // Update existing record
       const fields = [];
@@ -668,13 +736,16 @@ class NeonService {
       fields.push(`updated_at = NOW()`);
       values.push(userId);
 
-      await sequelize.query(`
+      await sequelize.query(
+        `
         UPDATE verification_status 
-        SET ${fields.join(', ')}
+        SET ${fields.join(", ")}
         WHERE user_id = $${paramIndex}
-      `, {
-        bind: values
-      });
+      `,
+        {
+          bind: values,
+        },
+      );
     }
 
     return true;
@@ -700,16 +771,19 @@ class NeonService {
         phone: row.phone_number || row.phone || null,
         department: row.department || null,
         batch: row.batch || null,
-        cgpa: row.cgpa || null,
-        currentBacklogs: row.current_backlogs || null,
+        cgpa: row.cgpa !== null && row.cgpa !== undefined ? row.cgpa : null,
+        currentBacklogs:
+          row.current_backlogs !== null && row.current_backlogs !== undefined
+            ? row.current_backlogs
+            : null,
         graduationYear: row.graduation_year || null,
         isProfileComplete: row.is_profile_complete || false,
-        profileCompletionPercentage: row.profile_completion_percentage || 0
+        profileCompletionPercentage: row.profile_completion_percentage || 0,
       },
       placementPolicyConsent: {
         hasAgreed: row.consent_has_agreed || false,
         agreedAt: row.consent_agreed_at || null,
-        signature: row.consent_signature || null
+        signature: row.consent_signature || null,
       },
       verificationStatus: {
         otpVerified: row.otp_verified || false,
@@ -718,17 +792,17 @@ class NeonService {
         otpExpires: row.otp_expires || null,
         otpAttempts: row.otp_attempts || 0,
         otpResendCount: row.otp_resend_count || 0,
-        lastOtpSent: row.last_otp_sent || null
+        lastOtpSent: row.last_otp_sent || null,
       },
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       // Helper method for model-like API compatibility
-      save: async function() {
-        throw new Error('Cannot call save() on NeonDB user object');
+      save: async function () {
+        throw new Error("Cannot call save() on NeonDB user object");
       },
-      calculateProfileCompletion: function() {
+      calculateProfileCompletion: function () {
         // Placeholder - implement if needed
-      }
+      },
     };
   }
 
@@ -740,18 +814,22 @@ class NeonService {
   async createJobDrive(driveData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const rounds = Array.isArray(driveData.rounds) && driveData.rounds.length > 0
-      ? driveData.rounds
-      : (Array.isArray(driveData.selectionRounds)
+    const rounds =
+      Array.isArray(driveData.rounds) && driveData.rounds.length > 0
+        ? driveData.rounds
+        : Array.isArray(driveData.selectionRounds)
           ? driveData.selectionRounds
-              .map((round) => (typeof round?.name === 'string' ? round.name.trim() : ''))
+              .map((round) =>
+                typeof round?.name === "string" ? round.name.trim() : "",
+              )
               .filter(Boolean)
-          : []);
+          : [];
 
-    const [result] = await sequelize.query(`
+    const [result] = await sequelize.query(
+      `
       INSERT INTO job_drives (
         id, company_name, company_website, company_description,
         recruiter_name, recruiter_email, recruiter_phone,
@@ -769,49 +847,51 @@ class NeonService {
         $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39,
         NOW(), NOW()
       ) RETURNING id
-    `, {
-      bind: [
-        driveData.companyName,
-        driveData.companyWebsite || '',
-        driveData.companyDescription || '',
-        driveData.recruiterContact?.name || '',
-        driveData.recruiterContact?.email || '',
-        driveData.recruiterContact?.phone || '',
-        driveData.role,
-        driveData.jobType || 'full-time',
-        driveData.description,
-        driveData.requirements || '',
-        driveData.skills || [],  // Pass array directly, not JSON string
-        driveData.ctc,
-        driveData.driveMode || 'on-campus',
-        driveData.location || '',
-        driveData.locations || [],  // Pass array directly, not JSON string
-        driveData.ctcBreakdown?.baseSalary || 0,
-        driveData.ctcBreakdown?.variablePay || 0,
-        driveData.ctcBreakdown?.joiningBonus || 0,
-        driveData.ctcBreakdown?.otherBenefits || '',
-        driveData.bond || '',
-        driveData.bondDetails?.amount || 0,
-        driveData.bondDetails?.duration || '',
-        driveData.date,
-        driveData.time || null,
-        driveData.deadline || null,
-        driveData.applicationDeadlineTime || null,
-        driveData.venue || '',
-        driveData.isDreamJob || false,
-        driveData.unplacedOnly || false,
-        true, // isActive
-        driveData.eligibility?.minCGPA || 0,
-        driveData.eligibility?.maxBacklogs || 0,
-        driveData.eligibility?.allowedDepartments || [],  // Pass array directly, not JSON string
-        driveData.eligibility?.allowedBatches || [],  // Pass array directly, not JSON string
-        driveData.spocDept || null,
-        rounds,
-        driveData.testDetails || '',
-        driveData.interviewProcess || '',
-        driveData.createdBy
-      ]
-    });
+    `,
+      {
+        bind: [
+          driveData.companyName,
+          driveData.companyWebsite || "",
+          driveData.companyDescription || "",
+          driveData.recruiterContact?.name || "",
+          driveData.recruiterContact?.email || "",
+          driveData.recruiterContact?.phone || "",
+          driveData.role,
+          driveData.jobType || "full-time",
+          driveData.description,
+          driveData.requirements || "",
+          driveData.skills || [], // Pass array directly, not JSON string
+          driveData.ctc,
+          driveData.driveMode || "on-campus",
+          driveData.location || "",
+          driveData.locations || [], // Pass array directly, not JSON string
+          driveData.ctcBreakdown?.baseSalary || 0,
+          driveData.ctcBreakdown?.variablePay || 0,
+          driveData.ctcBreakdown?.joiningBonus || 0,
+          driveData.ctcBreakdown?.otherBenefits || "",
+          driveData.bond || "",
+          driveData.bondDetails?.amount || 0,
+          driveData.bondDetails?.duration || "",
+          driveData.date,
+          driveData.time || null,
+          driveData.deadline || null,
+          driveData.applicationDeadlineTime || null,
+          driveData.venue || "",
+          driveData.isDreamJob || false,
+          driveData.unplacedOnly || false,
+          true, // isActive
+          driveData.eligibility?.minCGPA || 0,
+          driveData.eligibility?.maxBacklogs || 0,
+          driveData.eligibility?.allowedDepartments || [], // Pass array directly, not JSON string
+          driveData.eligibility?.allowedBatches || [], // Pass array directly, not JSON string
+          driveData.spocDept || null,
+          rounds,
+          driveData.testDetails || "",
+          driveData.interviewProcess || "",
+          driveData.createdBy,
+        ],
+      },
+    );
 
     const driveId = result[0]?.id;
 
@@ -828,12 +908,12 @@ class NeonService {
   async findAllJobDrives(query = {}) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     const { tableName, driveColumn } = await this.getApplicationsTableConfig();
 
-    let whereClause = 'WHERE 1=1';
+    let whereClause = "WHERE 1=1";
     const params = [];
     let paramIndex = 1;
 
@@ -842,7 +922,8 @@ class NeonService {
       params.push(query.isActive);
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT 
         jd.*,
         u.email as creator_email,
@@ -852,9 +933,11 @@ class NeonService {
       LEFT JOIN users u ON jd.created_by = u.id
       ${whereClause}
       ORDER BY jd.created_at DESC
-    `, {
-      bind: params
-    });
+    `,
+      {
+        bind: params,
+      },
+    );
 
     const drives = results.map((row) => this.formatJobDriveFromNeon(row));
 
@@ -877,7 +960,7 @@ class NeonService {
           placedStudents,
           placementFinalized: placedStudents.length > 0,
         };
-      })
+      }),
     );
 
     return enrichedDrives;
@@ -889,10 +972,11 @@ class NeonService {
   async findJobDriveById(driveId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT 
         jd.*,
         u.email as creator_email,
@@ -901,9 +985,11 @@ class NeonService {
       LEFT JOIN users u ON jd.created_by = u.id
       WHERE jd.id = $1
       LIMIT 1
-    `, {
-      bind: [driveId]
-    });
+    `,
+      {
+        bind: [driveId],
+      },
+    );
 
     if (results.length === 0) {
       return null;
@@ -922,18 +1008,23 @@ class NeonService {
   async addApplicationToJobDrive(driveId, studentId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const { tableName, driveColumn, studentColumn, columns: availableColumns } = await this.getApplicationsTableConfig();
+    const {
+      tableName,
+      driveColumn,
+      studentColumn,
+      columns: availableColumns,
+    } = await this.getApplicationsTableConfig();
 
     const columns = [];
     const values = [];
     const bind = [];
 
-    if (availableColumns.has('id')) {
-      columns.push('id');
-      values.push('gen_random_uuid()');
+    if (availableColumns.has("id")) {
+      columns.push("id");
+      values.push("gen_random_uuid()");
     }
 
     columns.push(driveColumn);
@@ -944,29 +1035,29 @@ class NeonService {
     bind.push(studentId);
     values.push(`$${bind.length}`);
 
-    if (availableColumns.has('status')) {
-      columns.push('status');
+    if (availableColumns.has("status")) {
+      columns.push("status");
       values.push(`'applied'`);
     }
 
-    if (availableColumns.has('applied_at')) {
-      columns.push('applied_at');
-      values.push('NOW()');
+    if (availableColumns.has("applied_at")) {
+      columns.push("applied_at");
+      values.push("NOW()");
     }
 
-    if (availableColumns.has('created_at')) {
-      columns.push('created_at');
-      values.push('NOW()');
+    if (availableColumns.has("created_at")) {
+      columns.push("created_at");
+      values.push("NOW()");
     }
 
-    if (availableColumns.has('updated_at')) {
-      columns.push('updated_at');
-      values.push('NOW()');
+    if (availableColumns.has("updated_at")) {
+      columns.push("updated_at");
+      values.push("NOW()");
     }
 
     await sequelize.query(
-      `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${values.join(', ')})`,
-      { bind }
+      `INSERT INTO ${tableName} (${columns.join(", ")}) VALUES (${values.join(", ")})`,
+      { bind },
     );
 
     return true;
@@ -978,24 +1069,30 @@ class NeonService {
   async deleteJobDrive(driveId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     // Delete applications first (foreign key constraint)
     const { tableName, driveColumn } = await this.getApplicationsTableConfig();
 
-    await sequelize.query(`
+    await sequelize.query(
+      `
       DELETE FROM ${tableName} WHERE ${driveColumn} = $1
-    `, {
-      bind: [driveId]
-    });
+    `,
+      {
+        bind: [driveId],
+      },
+    );
 
     // Delete the drive
-    await sequelize.query(`
+    await sequelize.query(
+      `
       DELETE FROM job_drives WHERE id = $1
-    `, {
-      bind: [driveId]
-    });
+    `,
+      {
+        bind: [driveId],
+      },
+    );
 
     return true;
   }
@@ -1006,10 +1103,10 @@ class NeonService {
   async countJobDrives(query = {}) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    let whereClause = 'WHERE 1=1';
+    let whereClause = "WHERE 1=1";
     const params = [];
     let paramIndex = 1;
 
@@ -1023,13 +1120,16 @@ class NeonService {
       params.push(query.createdBy);
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT COUNT(*) as count
       FROM job_drives
       ${whereClause}
-    `, {
-      bind: params
-    });
+    `,
+      {
+        bind: params,
+      },
+    );
 
     return parseInt(results[0].count);
   }
@@ -1039,20 +1139,22 @@ class NeonService {
    */
   formatJobDriveFromNeon(row) {
     // Handle null creator (when user is deleted)
-    const createdBy = row.created_by ? {
-      _id: row.created_by,
-      email: row.creator_email,
-      profile: {
-        name: row.creator_name
-      }
-    } : {
-      _id: null,
-      email: null,
-      profile: {
-        name: 'Missing creator info'
-      },
-      isDeleted: true
-    };
+    const createdBy = row.created_by
+      ? {
+          _id: row.created_by,
+          email: row.creator_email,
+          profile: {
+            name: row.creator_name,
+          },
+        }
+      : {
+          _id: null,
+          email: null,
+          profile: {
+            name: "Missing creator info",
+          },
+          isDeleted: true,
+        };
 
     const applicationCount = Number.parseInt(row.application_count, 10);
 
@@ -1063,30 +1165,34 @@ class NeonService {
       companyWebsite: row.company_website,
       companyDescription: row.company_description,
       recruiterContact: {
-        name: row.recruiter_name || '',
-        email: row.recruiter_email || '',
-        phone: row.recruiter_phone || '',
+        name: row.recruiter_name || "",
+        email: row.recruiter_email || "",
+        phone: row.recruiter_phone || "",
       },
       role: row.role,
       type: row.job_type,
       jobType: row.job_type,
       description: row.description,
       requirements: row.requirements,
-      skills: typeof row.skills === 'string' ? JSON.parse(row.skills) : row.skills,
+      skills:
+        typeof row.skills === "string" ? JSON.parse(row.skills) : row.skills,
       ctc: row.ctc,
       ctcBreakdown: {
         baseSalary: row.ctc_base_salary || 0,
         variablePay: row.ctc_variable_pay || 0,
         joiningBonus: row.ctc_joining_bonus || 0,
-        otherBenefits: row.ctc_other_benefits || '',
+        otherBenefits: row.ctc_other_benefits || "",
       },
       driveMode: row.drive_mode,
       location: row.location,
-      locations: typeof row.locations === 'string' ? JSON.parse(row.locations) : row.locations,
-      bond: row.bond || '',
+      locations:
+        typeof row.locations === "string"
+          ? JSON.parse(row.locations)
+          : row.locations,
+      bond: row.bond || "",
       bondDetails: {
         amount: row.bond_amount || 0,
-        duration: row.bond_duration || '',
+        duration: row.bond_duration || "",
       },
       date: row.drive_date,
       time: row.drive_time,
@@ -1099,16 +1205,23 @@ class NeonService {
       eligibility: {
         minCGPA: row.eligibility_min_cgpa,
         maxBacklogs: row.eligibility_max_backlogs,
-        allowedDepartments: typeof row.eligibility_allowed_departments === 'string' ? 
-          JSON.parse(row.eligibility_allowed_departments) : row.eligibility_allowed_departments,
-        allowedBatches: typeof row.eligibility_allowed_batches === 'string' ? 
-          JSON.parse(row.eligibility_allowed_batches) : row.eligibility_allowed_batches
+        allowedDepartments:
+          typeof row.eligibility_allowed_departments === "string"
+            ? JSON.parse(row.eligibility_allowed_departments)
+            : row.eligibility_allowed_departments,
+        allowedBatches:
+          typeof row.eligibility_allowed_batches === "string"
+            ? JSON.parse(row.eligibility_allowed_batches)
+            : row.eligibility_allowed_batches,
       },
       spocDept: row.spoc_dept,
-      rounds: typeof row.rounds === 'string' ? JSON.parse(row.rounds) : (row.rounds || []),
-      testDetails: row.test_details || '',
-      interviewProcess: row.interview_process || '',
-      approvalStatus: row.approval_status || 'approved',
+      rounds:
+        typeof row.rounds === "string"
+          ? JSON.parse(row.rounds)
+          : row.rounds || [],
+      testDetails: row.test_details || "",
+      interviewProcess: row.interview_process || "",
+      approvalStatus: row.approval_status || "approved",
       createdBy: createdBy,
       applicationCount: Number.isNaN(applicationCount) ? 0 : applicationCount,
       applications: [], // Will be populated separately if needed
@@ -1118,9 +1231,9 @@ class NeonService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       // Helper method for model-like API compatibility
-      save: async function() {
-        throw new Error('Cannot call save() on NeonDB job drive object');
-      }
+      save: async function () {
+        throw new Error("Cannot call save() on NeonDB job drive object");
+      },
     };
   }
 
@@ -1130,21 +1243,28 @@ class NeonService {
   async createUser(userData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     let verificationTokenExpires = userData.verificationTokenExpires ?? null;
-    if (typeof verificationTokenExpires === 'number') {
+    if (typeof verificationTokenExpires === "number") {
       verificationTokenExpires = new Date(verificationTokenExpires);
-    } else if (typeof verificationTokenExpires === 'string' && /^\d+$/.test(verificationTokenExpires)) {
+    } else if (
+      typeof verificationTokenExpires === "string" &&
+      /^\d+$/.test(verificationTokenExpires)
+    ) {
       verificationTokenExpires = new Date(Number(verificationTokenExpires));
     }
 
-    if (verificationTokenExpires instanceof Date && Number.isNaN(verificationTokenExpires.getTime())) {
+    if (
+      verificationTokenExpires instanceof Date &&
+      Number.isNaN(verificationTokenExpires.getTime())
+    ) {
       verificationTokenExpires = null;
     }
 
-    const [result] = await sequelize.query(`
+    const [result] = await sequelize.query(
+      `
       INSERT INTO users (
         id, name, email, password, role, is_verified,
         verification_token, verification_token_expires,
@@ -1152,30 +1272,42 @@ class NeonService {
       ) VALUES (
         gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, NOW(), NOW()
       ) RETURNING id, name, email, role, is_verified, created_at
-    `, {
-      bind: [
-        userData.name,
-        userData.email,
-        userData.password,
-        userData.role,
-        userData.isVerified || false,
-        userData.verificationToken || null,
-        verificationTokenExpires
-      ]
-    });
+    `,
+      {
+        bind: [
+          userData.name,
+          userData.email,
+          userData.password,
+          userData.role,
+          userData.isVerified || false,
+          userData.verificationToken || null,
+          verificationTokenExpires,
+        ],
+      },
+    );
 
     // Link PR allowlist entry if it exists
-    if (result[0] && (userData.role === 'placement_representative' || userData.role === 'placement_officer')) {
+    if (
+      result[0] &&
+      (userData.role === "placement_representative" ||
+        userData.role === "placement_officer")
+    ) {
       try {
-        await sequelize.query(`
+        await sequelize.query(
+          `
           UPDATE pr_allowlist 
           SET user_id = $1, updated_at = NOW()
           WHERE email = $2 AND user_id IS NULL
-        `, {
-          bind: [result[0].id, userData.email.toLowerCase()]
-        });
+        `,
+          {
+            bind: [result[0].id, userData.email.toLowerCase()],
+          },
+        );
       } catch (linkError) {
-        console.log('Note: Could not link PR allowlist entry:', linkError.message);
+        console.log(
+          "Note: Could not link PR allowlist entry:",
+          linkError.message,
+        );
         // Don't fail user creation if allowlist linking fails
       }
     }
@@ -1186,118 +1318,65 @@ class NeonService {
   /**
    * Delete user by ID
    */
-  async deleteUserById(userId, deletedBy = null, deletionReason = null) {
+  async deleteUserById(userId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    // First, get user email and profile snapshot for allowlist cleanup + archival
-    const [userResult] = await sequelize.query(`
-      SELECT
-        u.id,
-        u.email,
-        to_jsonb(u) AS user_json,
-        to_jsonb(up) AS profile_json
-      FROM users u
-      LEFT JOIN user_profiles up ON up.user_id = u.id
-      WHERE u.id = $1
-      LIMIT 1
-    `, {
-      bind: [userId]
-    });
-
-    if (!userResult || userResult.length === 0) {
-      return false;
-    }
-
-    const userEmail = userResult[0].email;
-    const originalUserData = {
-      user: userResult[0].user_json || null,
-      profile: userResult[0].profile_json || null,
-    };
-    const archiveDeletedBy = deletedBy && deletedBy !== userId ? deletedBy : null;
-
-    // Archive row in deleted_users if table and columns exist.
-    // Dynamic column handling keeps this backward compatible across schema variants.
-    try {
-      const [deletedUsersColumns] = await sequelize.query(
-        `
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'deleted_users'
-        `
-      );
-
-      const columnSet = new Set((deletedUsersColumns || []).map((c) => c.column_name));
-      const insertColumns = [];
-      const insertValues = [];
-      const bind = [];
-      let idx = 1;
-
-      const addCol = (name, value, useNow = false) => {
-        insertColumns.push(name);
-        if (useNow) {
-          insertValues.push('NOW()');
-          return;
-        }
-        insertValues.push(`$${idx++}`);
-        bind.push(value);
-      };
-
-      if (columnSet.has('original_user_id')) addCol('original_user_id', userId);
-      if (columnSet.has('user_id')) addCol('user_id', userId);
-      if (columnSet.has('original_user_data')) addCol('original_user_data', JSON.stringify(originalUserData));
-      if (columnSet.has('user_data')) addCol('user_data', JSON.stringify(originalUserData));
-      if (columnSet.has('deleted_by')) addCol('deleted_by', archiveDeletedBy);
-      if (columnSet.has('deleted_by_user_id')) addCol('deleted_by_user_id', archiveDeletedBy);
-      if (columnSet.has('reason')) addCol('reason', deletionReason || 'Account deleted');
-      if (columnSet.has('deletion_reason')) addCol('deletion_reason', deletionReason || 'Account deleted');
-      if (columnSet.has('deleted_at')) addCol('deleted_at', null, true);
-      if (columnSet.has('created_at')) addCol('created_at', null, true);
-      if (columnSet.has('updated_at')) addCol('updated_at', null, true);
-      if (columnSet.has('email')) addCol('email', userEmail);
-      if (columnSet.has('name')) addCol('name', originalUserData.user?.name || null);
-      if (columnSet.has('role')) addCol('role', originalUserData.user?.role || null);
-
-      if (insertColumns.length > 0) {
-        await sequelize.query(
-          `INSERT INTO deleted_users (${insertColumns.join(', ')}) VALUES (${insertValues.join(', ')})`,
-          { bind }
-        );
-      }
-    } catch (archiveError) {
-      console.error('Warning: Could not archive deleted user in deleted_users:', archiveError.message);
-    }
+    // First, get user email for allowlist cleanup
+    const [userResult] = await sequelize.query(
+      `
+      SELECT email FROM users WHERE id = $1
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     // Preserve job drives created by the user while removing account
     // so UI can render "Missing creator info" instead of deleting drives.
-    await sequelize.query(`
+    await sequelize.query(
+      `
       UPDATE job_drives
       SET created_by = NULL, updated_at = NOW()
       WHERE created_by = $1
-    `, {
-      bind: [userId]
-    });
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     // Delete the user (foreign keys handle dependent rows)
-    await sequelize.query(`
+    await sequelize.query(
+      `
       DELETE FROM users WHERE id = $1
-    `, {
-      bind: [userId]
-    });
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     // Clean up PR allowlist entry if it exists
-    try {
-      await sequelize.query(`
-        DELETE FROM pr_allowlist WHERE user_id = $1 OR email = $2
-      `, {
-        bind: [userId, userEmail.toLowerCase()]
-      });
-      console.log(`✅ Cleaned up PR allowlist entry for: ${userEmail}`);
-    } catch (allowlistError) {
-      console.log(`Note: Could not clean up PR allowlist for ${userEmail}:`, allowlistError.message);
-      // Don't fail user deletion if allowlist cleanup fails
+    if (userResult.length > 0) {
+      const userEmail = userResult[0].email;
+      try {
+        await sequelize.query(
+          `
+          DELETE FROM pr_allowlist WHERE user_id = $1 OR email = $2
+        `,
+          {
+            bind: [userId, userEmail.toLowerCase()],
+          },
+        );
+        console.log(`✅ Cleaned up PR allowlist entry for: ${userEmail}`);
+      } catch (allowlistError) {
+        console.log(
+          `Note: Could not clean up PR allowlist for ${userEmail}:`,
+          allowlistError.message,
+        );
+        // Don't fail user deletion if allowlist cleanup fails
+      }
     }
 
     return true;
@@ -1309,11 +1388,12 @@ class NeonService {
   async findUserByVerificationToken(token) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     try {
-      const [results] = await sequelize.query(`
+      const [results] = await sequelize.query(
+        `
         SELECT 
           u.id, u.name, u.email, u.password, u.role, u.is_verified,
           u.verification_token, u.verification_token_expires,
@@ -1322,9 +1402,11 @@ class NeonService {
         WHERE u.verification_token = $1
         AND u.verification_token_expires > NOW()
         LIMIT 1
-      `, {
-        bind: [token]
-      });
+      `,
+        {
+          bind: [token],
+        },
+      );
 
       if (results.length === 0) {
         return null;
@@ -1332,7 +1414,10 @@ class NeonService {
 
       return this.formatUserFromNeon(results[0]);
     } catch (error) {
-      console.error('[NEON] Error in findUserByVerificationToken:', error.message);
+      console.error(
+        "[NEON] Error in findUserByVerificationToken:",
+        error.message,
+      );
       throw error;
     }
   }
@@ -1343,7 +1428,7 @@ class NeonService {
   async updateUserById(userId, updateData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     const fields = [];
@@ -1384,13 +1469,13 @@ class NeonService {
 
     const sql = `
       UPDATE users 
-      SET ${fields.join(', ')}
+      SET ${fields.join(", ")}
       WHERE id = $${paramIndex}
       RETURNING *
     `;
 
     const [results] = await sequelize.query(sql, {
-      bind: values
+      bind: values,
     });
 
     return results[0] ? this.formatUserFromNeon(results[0]) : null;
@@ -1402,10 +1487,11 @@ class NeonService {
   async hasStudentApplied(driveId, studentId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const { tableName, driveColumn, studentColumn } = await this.getApplicationsTableConfig();
+    const { tableName, driveColumn, studentColumn } =
+      await this.getApplicationsTableConfig();
 
     const [results] = await sequelize.query(
       `
@@ -1415,7 +1501,7 @@ class NeonService {
       `,
       {
         bind: [driveId, studentId],
-      }
+      },
     );
 
     return parseInt(results[0].count) > 0;
@@ -1444,10 +1530,11 @@ class NeonService {
   async getJobDriveApplications(driveId, query = {}) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const { tableName, driveColumn, studentColumn } = await this.getApplicationsTableConfig();
+    const { tableName, driveColumn, studentColumn } =
+      await this.getApplicationsTableConfig();
 
     let whereClause = `WHERE jda.${driveColumn} = $1`;
     const params = [driveId];
@@ -1458,7 +1545,8 @@ class NeonService {
       params.push(query.status);
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT 
         jda.*,
         u.name, u.email, u.role,
@@ -1468,9 +1556,11 @@ class NeonService {
       LEFT JOIN user_profiles up ON u.id = up.user_id
       ${whereClause}
       ORDER BY jda.applied_at DESC
-    `, {
-      bind: params
-    });
+    `,
+      {
+        bind: params,
+      },
+    );
 
     return results;
   }
@@ -1481,7 +1571,7 @@ class NeonService {
   async countApplicationsForDrive(driveId, status = null) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     const { tableName, driveColumn } = await this.getApplicationsTableConfig();
@@ -1495,13 +1585,16 @@ class NeonService {
       params.push(status);
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT COUNT(*) as count
       FROM ${tableName}
       ${whereClause}
-    `, {
-      bind: params
-    });
+    `,
+      {
+        bind: params,
+      },
+    );
 
     return parseInt(results[0].count);
   }
@@ -1512,14 +1605,17 @@ class NeonService {
   async updateJobDrive(driveId, updateData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     const fields = [];
     const values = [];
     let paramIndex = 1;
 
-    if (updateData.company_name !== undefined || updateData.companyName !== undefined) {
+    if (
+      updateData.company_name !== undefined ||
+      updateData.companyName !== undefined
+    ) {
       fields.push(`company_name = $${paramIndex++}`);
       values.push(updateData.company_name ?? updateData.companyName);
     }
@@ -1679,16 +1775,20 @@ class NeonService {
     if (fields.length === 0) {
       const existingDrive = await this.findJobDriveById(driveId);
       if (updateData.selectionRounds !== undefined) {
-        existingDrive.selectionRounds = await this.replaceSelectionRounds(driveId, updateData.selectionRounds || []);
+        existingDrive.selectionRounds = await this.replaceSelectionRounds(
+          driveId,
+          updateData.selectionRounds || [],
+        );
       }
       if (updateData.placedStudents !== undefined) {
         existingDrive.placedStudents = await this.replacePlacedStudents(
           driveId,
           existingDrive.companyName,
           updateData.placedStudents || [],
-          updateData.addedBy || null
+          updateData.addedBy || null,
         );
-        existingDrive.placementFinalized = existingDrive.placedStudents.length > 0;
+        existingDrive.placementFinalized =
+          existingDrive.placedStudents.length > 0;
       }
       return existingDrive;
     }
@@ -1698,13 +1798,13 @@ class NeonService {
 
     const sql = `
       UPDATE job_drives 
-      SET ${fields.join(', ')}
+      SET ${fields.join(", ")}
       WHERE id = $${paramIndex}
       RETURNING *
     `;
 
     const [results] = await sequelize.query(sql, {
-      bind: values
+      bind: values,
     });
 
     if (!results[0]) {
@@ -1712,7 +1812,10 @@ class NeonService {
     }
 
     if (updateData.selectionRounds !== undefined) {
-      await this.replaceSelectionRounds(driveId, updateData.selectionRounds || []);
+      await this.replaceSelectionRounds(
+        driveId,
+        updateData.selectionRounds || [],
+      );
     }
 
     if (updateData.placedStudents !== undefined) {
@@ -1720,7 +1823,7 @@ class NeonService {
         driveId,
         results[0].company_name,
         updateData.placedStudents || [],
-        updateData.addedBy || null
+        updateData.addedBy || null,
       );
     }
 
@@ -1733,11 +1836,12 @@ class NeonService {
   async getEligibleDrivesForStudent(studentId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     // Get student's eligibility profile from Neon schema
-    const [student] = await sequelize.query(`
+    const [student] = await sequelize.query(
+      `
       SELECT
         up.cgpa,
         COALESCE(up.current_backlogs, 0) AS current_backlogs,
@@ -1745,9 +1849,11 @@ class NeonService {
         CAST(up.graduation_year AS text) AS batch
       FROM user_profiles up
       WHERE up.user_id = $1
-    `, {
-      bind: [studentId]
-    });
+    `,
+      {
+        bind: [studentId],
+      },
+    );
 
     if (!student || student.length === 0) {
       return [];
@@ -1755,7 +1861,8 @@ class NeonService {
 
     const { cgpa, current_backlogs, batch, department } = student[0];
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT 
         jd.*,
         u.email as creator_email,
@@ -1779,11 +1886,13 @@ class NeonService {
         OR $4 = ANY(jd.eligibility_allowed_batches)
       )
       ORDER BY jd.created_at DESC
-    `, {
-      bind: [cgpa, current_backlogs, department, batch]
-    });
+    `,
+      {
+        bind: [cgpa, current_backlogs, department, batch],
+      },
+    );
 
-    return results.map(row => this.formatJobDriveFromNeon(row));
+    return results.map((row) => this.formatJobDriveFromNeon(row));
   }
 
   /**
@@ -1792,37 +1901,44 @@ class NeonService {
   async submitPlacementConsent(userId, consentData) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
     // Check if placement_consents record exists
-    const [existing] = await sequelize.query(`
+    const [existing] = await sequelize.query(
+      `
       SELECT id FROM placement_consents WHERE user_id = $1
-    `, {
-      bind: [userId]
-    });
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     if (existing.length === 0) {
       // Insert new consent record
-      await sequelize.query(`
+      await sequelize.query(
+        `
         INSERT INTO placement_consents (
           id, user_id, has_agreed, agreed_at, signature, 
           ip_address, user_agent, created_at, updated_at
         ) VALUES (
           gen_random_uuid(), $1, $2, NOW(), $3, $4, $5, NOW(), NOW()
         )
-      `, {
-        bind: [
-          userId,
-          consentData.hasAgreed || false,
-          consentData.signature || null,
-          consentData.ipAddress || null,
-          consentData.userAgent || null
-        ]
-      });
+      `,
+        {
+          bind: [
+            userId,
+            consentData.hasAgreed || false,
+            consentData.signature || null,
+            consentData.ipAddress || null,
+            consentData.userAgent || null,
+          ],
+        },
+      );
     } else {
       // Update existing consent record
-      await sequelize.query(`
+      await sequelize.query(
+        `
         UPDATE placement_consents 
         SET has_agreed = $2,
             agreed_at = NOW(),
@@ -1831,15 +1947,17 @@ class NeonService {
             user_agent = $5,
             updated_at = NOW()
         WHERE user_id = $1
-      `, {
-        bind: [
-          userId,
-          consentData.hasAgreed || false,
-          consentData.signature || null,
-          consentData.ipAddress || null,
-          consentData.userAgent || null
-        ]
-      });
+      `,
+        {
+          bind: [
+            userId,
+            consentData.hasAgreed || false,
+            consentData.signature || null,
+            consentData.ipAddress || null,
+            consentData.userAgent || null,
+          ],
+        },
+      );
     }
 
     return true;
@@ -1851,14 +1969,17 @@ class NeonService {
   async getPlacementConsent(userId) {
     const connected = await this.checkConnection();
     if (!connected) {
-      throw new Error('NeonDB not connected');
+      throw new Error("NeonDB not connected");
     }
 
-    const [results] = await sequelize.query(`
+    const [results] = await sequelize.query(
+      `
       SELECT * FROM placement_consents WHERE user_id = $1
-    `, {
-      bind: [userId]
-    });
+    `,
+      {
+        bind: [userId],
+      },
+    );
 
     return results.length > 0 ? results[0] : null;
   }
@@ -1869,8 +1990,8 @@ class NeonService {
   getConnectionStatus() {
     return {
       connected: this.isConnected,
-      database: 'NeonDB (PostgreSQL)',
-      status: this.isConnected ? 'active' : 'inactive'
+      database: "NeonDB (PostgreSQL)",
+      status: this.isConnected ? "active" : "inactive",
     };
   }
 
@@ -1891,10 +2012,10 @@ class NeonService {
           COUNT(DISTINCT created_by) as total_recruiters
         FROM job_drives
       `);
-      
+
       return stats[0];
     } catch (error) {
-      console.error('Error getting job drive stats:', error);
+      console.error("Error getting job drive stats:", error);
       throw error;
     }
   }
@@ -1917,10 +2038,10 @@ class NeonService {
         WHERE u.role = 'student'
         ORDER BY u.created_at DESC
       `);
-      
-      return students.map(s => this.formatUserFromNeon(s));
+
+      return students.map((s) => this.formatUserFromNeon(s));
     } catch (error) {
-      console.error('Error getting students:', error);
+      console.error("Error getting students:", error);
       throw error;
     }
   }
@@ -1934,10 +2055,10 @@ class NeonService {
         SELECT COUNT(DISTINCT student_id) as count
         FROM placed_students
       `);
-      
+
       return parseInt(result[0].count);
     } catch (error) {
-      console.error('Error getting placed students count:', error);
+      console.error("Error getting placed students count:", error);
       throw error;
     }
   }
@@ -1946,15 +2067,15 @@ class NeonService {
    * Get PR allowlist entries
    */
   async getPRAllowlistTables() {
-    const hasSingular = await this.tableExists('pr_allowlist');
-    const hasPlural = await this.tableExists('pr_allowlists');
+    const hasSingular = await this.tableExists("pr_allowlist");
+    const hasPlural = await this.tableExists("pr_allowlists");
 
     if (!hasSingular && !hasPlural) {
-      throw new Error('Neither pr_allowlist nor pr_allowlists table exists');
+      throw new Error("Neither pr_allowlist nor pr_allowlists table exists");
     }
 
-    const primaryTable = hasSingular ? 'pr_allowlist' : 'pr_allowlists';
-    const fallbackTable = hasSingular && hasPlural ? 'pr_allowlists' : null;
+    const primaryTable = hasSingular ? "pr_allowlist" : "pr_allowlists";
+    const fallbackTable = hasSingular && hasPlural ? "pr_allowlists" : null;
     return { primaryTable, fallbackTable };
   }
 
@@ -1962,14 +2083,16 @@ class NeonService {
     return {
       ...entry,
       approved_at: entry.approved_at || entry.approved_date || null,
-      requested_at: entry.requested_at || entry.created_at || null
+      requested_at: entry.requested_at || entry.created_at || null,
     };
   }
 
   async getPRAllowlist(status = null) {
     try {
       const { primaryTable, fallbackTable } = await this.getPRAllowlistTables();
-      const tablesToRead = fallbackTable ? [primaryTable, fallbackTable] : [primaryTable];
+      const tablesToRead = fallbackTable
+        ? [primaryTable, fallbackTable]
+        : [primaryTable];
 
       const allRows = [];
 
@@ -1978,7 +2101,7 @@ class NeonService {
         let query = `SELECT *, '${tableName}' AS source_table FROM ${tableName}`;
 
         if (status) {
-          query += ' WHERE status = $1';
+          query += " WHERE status = $1";
           params.push(status);
         }
 
@@ -1988,7 +2111,7 @@ class NeonService {
 
       const dedupedByEmail = new Map();
       allRows.forEach((row) => {
-        const key = String(row.email || row.id || '').toLowerCase();
+        const key = String(row.email || row.id || "").toLowerCase();
         const existing = dedupedByEmail.get(key);
 
         if (!existing) {
@@ -2004,8 +2127,12 @@ class NeonService {
           return;
         }
 
-        const existingTs = new Date(existing.updated_at || existing.requested_at || 0).getTime();
-        const incomingTs = new Date(row.updated_at || row.requested_at || 0).getTime();
+        const existingTs = new Date(
+          existing.updated_at || existing.requested_at || 0,
+        ).getTime();
+        const incomingTs = new Date(
+          row.updated_at || row.requested_at || 0,
+        ).getTime();
         if (incomingTs > existingTs) {
           dedupedByEmail.set(key, row);
         }
@@ -2017,7 +2144,7 @@ class NeonService {
         return bTs - aTs;
       });
     } catch (error) {
-      console.error('Error getting PR allowlist:', error);
+      console.error("Error getting PR allowlist:", error);
       throw error;
     }
   }
@@ -2028,23 +2155,26 @@ class NeonService {
   async createPRAllowlistEntry(data) {
     try {
       const { primaryTable } = await this.getPRAllowlistTables();
-      const [result] = await this.sequelize.query(`
+      const [result] = await this.sequelize.query(
+        `
         INSERT INTO ${primaryTable} (email, role, department, notes, status)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
-      `, {
-        bind: [
-          data.email.toLowerCase(),
-          data.role,
-          data.department || null,
-          data.notes || null,
-          'pending'
-        ]
-      });
-      
+      `,
+        {
+          bind: [
+            data.email.toLowerCase(),
+            data.role,
+            data.department || null,
+            data.notes || null,
+            "pending",
+          ],
+        },
+      );
+
       return result[0];
     } catch (error) {
-      console.error('Error creating PR allowlist entry:', error);
+      console.error("Error creating PR allowlist entry:", error);
       throw error;
     }
   }
@@ -2055,7 +2185,9 @@ class NeonService {
   async updatePRAllowlistEntry(id, updates) {
     try {
       const { primaryTable, fallbackTable } = await this.getPRAllowlistTables();
-      const tablesToTry = fallbackTable ? [primaryTable, fallbackTable] : [primaryTable];
+      const tablesToTry = fallbackTable
+        ? [primaryTable, fallbackTable]
+        : [primaryTable];
 
       for (const tableName of tablesToTry) {
         const columns = await this.getTableColumns(tableName);
@@ -2064,12 +2196,16 @@ class NeonService {
         let paramIndex = 1;
 
         const mappedUpdates = { ...updates };
-        if (!columns.has('approved_at') && columns.has('approved_date') && mappedUpdates.approved_at !== undefined) {
+        if (
+          !columns.has("approved_at") &&
+          columns.has("approved_date") &&
+          mappedUpdates.approved_at !== undefined
+        ) {
           mappedUpdates.approved_date = mappedUpdates.approved_at;
           delete mappedUpdates.approved_at;
         }
 
-        Object.keys(mappedUpdates).forEach(key => {
+        Object.keys(mappedUpdates).forEach((key) => {
           if (!columns.has(key)) {
             return;
           }
@@ -2083,14 +2219,19 @@ class NeonService {
         }
 
         values.push(id);
-        const updatedAtSql = columns.has('updated_at') ? ', updated_at = NOW()' : '';
+        const updatedAtSql = columns.has("updated_at")
+          ? ", updated_at = NOW()"
+          : "";
 
-        const [result] = await this.sequelize.query(`
+        const [result] = await this.sequelize.query(
+          `
           UPDATE ${tableName}
-          SET ${setClauses.join(', ')}${updatedAtSql}
+          SET ${setClauses.join(", ")}${updatedAtSql}
           WHERE id = $${paramIndex}
           RETURNING *
-        `, { bind: values });
+        `,
+          { bind: values },
+        );
 
         if (result[0]) {
           return this.normalizeAllowlistEntry(result[0]);
@@ -2099,7 +2240,7 @@ class NeonService {
 
       return null;
     } catch (error) {
-      console.error('Error updating PR allowlist entry:', error);
+      console.error("Error updating PR allowlist entry:", error);
       throw error;
     }
   }
@@ -2114,7 +2255,7 @@ class NeonService {
 
       const [primaryResult] = await this.sequelize.query(
         `SELECT * FROM ${primaryTable} WHERE LOWER(email) = $1 LIMIT 1`,
-        { bind: [normalizedEmail] }
+        { bind: [normalizedEmail] },
       );
 
       if (primaryResult[0]) {
@@ -2127,12 +2268,14 @@ class NeonService {
 
       const [fallbackResult] = await this.sequelize.query(
         `SELECT * FROM ${fallbackTable} WHERE LOWER(email) = $1 LIMIT 1`,
-        { bind: [normalizedEmail] }
+        { bind: [normalizedEmail] },
       );
 
-      return fallbackResult[0] ? this.normalizeAllowlistEntry(fallbackResult[0]) : null;
+      return fallbackResult[0]
+        ? this.normalizeAllowlistEntry(fallbackResult[0])
+        : null;
     } catch (error) {
-      console.error('Error finding PR allowlist by email:', error);
+      console.error("Error finding PR allowlist by email:", error);
       throw error;
     }
   }
@@ -2143,12 +2286,14 @@ class NeonService {
   async deletePRAllowlistEntry(id) {
     try {
       const { primaryTable, fallbackTable } = await this.getPRAllowlistTables();
-      const tablesToTry = fallbackTable ? [primaryTable, fallbackTable] : [primaryTable];
+      const tablesToTry = fallbackTable
+        ? [primaryTable, fallbackTable]
+        : [primaryTable];
 
       for (const tableName of tablesToTry) {
         const [deleted] = await this.sequelize.query(
           `DELETE FROM ${tableName} WHERE id = $1 RETURNING id`,
-          { bind: [id] }
+          { bind: [id] },
         );
 
         if (deleted[0]) {
@@ -2158,7 +2303,7 @@ class NeonService {
 
       return false;
     } catch (error) {
-      console.error('Error deleting PR allowlist entry:', error);
+      console.error("Error deleting PR allowlist entry:", error);
       throw error;
     }
   }
@@ -2168,8 +2313,10 @@ class NeonService {
    */
   async getJobDriveWithDetails(driveId) {
     try {
-      const { tableName, driveColumn } = await this.getApplicationsTableConfig();
-      const [drives] = await this.sequelize.query(`
+      const { tableName, driveColumn } =
+        await this.getApplicationsTableConfig();
+      const [drives] = await this.sequelize.query(
+        `
         SELECT 
           jd.*,
           u.email as creator_email,
@@ -2178,13 +2325,15 @@ class NeonService {
         FROM job_drives jd
         LEFT JOIN users u ON jd.created_by = u.id
         WHERE jd.id = $1
-      `, { bind: [driveId] });
-      
+      `,
+        { bind: [driveId] },
+      );
+
       if (!drives || drives.length === 0) return null;
-      
+
       return this.formatJobDriveFromNeon(drives[0]);
     } catch (error) {
-      console.error('Error getting job drive with details:', error);
+      console.error("Error getting job drive with details:", error);
       throw error;
     }
   }
@@ -2194,8 +2343,10 @@ class NeonService {
    */
   async getStudentsForDrive(driveId) {
     try {
-      const { tableName, driveColumn, studentColumn } = await this.getApplicationsTableConfig();
-      const [students] = await this.sequelize.query(`
+      const { tableName, driveColumn, studentColumn } =
+        await this.getApplicationsTableConfig();
+      const [students] = await this.sequelize.query(
+        `
         SELECT 
           u.id,
           u.email,
@@ -2208,11 +2359,13 @@ class NeonService {
         LEFT JOIN user_profiles up ON u.id = up.user_id
         WHERE jda.${driveColumn} = $1
         ORDER BY jda.applied_at DESC
-      `, { bind: [driveId] });
-      
+      `,
+        { bind: [driveId] },
+      );
+
       return students;
     } catch (error) {
-      console.error('Error getting students for drive:', error);
+      console.error("Error getting students for drive:", error);
       throw error;
     }
   }
@@ -2226,10 +2379,10 @@ class NeonService {
         SELECT * FROM deleted_users
         ORDER BY deleted_at DESC
       `);
-      
+
       return users;
     } catch (error) {
-      console.error('Error getting deleted users:', error);
+      console.error("Error getting deleted users:", error);
       throw error;
     }
   }
@@ -2239,15 +2392,18 @@ class NeonService {
    */
   async createDeletionRequest(userId, reason) {
     try {
-      const [result] = await this.sequelize.query(`
+      const [result] = await this.sequelize.query(
+        `
         INSERT INTO deletion_requests (user_id, reason, status)
         VALUES ($1, $2, 'pending')
         RETURNING *
-      `, { bind: [userId, reason] });
-      
+      `,
+        { bind: [userId, reason] },
+      );
+
       return result[0];
     } catch (error) {
-      console.error('Error creating deletion request:', error);
+      console.error("Error creating deletion request:", error);
       throw error;
     }
   }
@@ -2265,19 +2421,19 @@ class NeonService {
         FROM deletion_requests dr
         LEFT JOIN users u ON dr.user_id = u.id
       `;
-      
+
       const params = [];
       if (status) {
-        query += ' WHERE dr.status = $1';
+        query += " WHERE dr.status = $1";
         params.push(status);
       }
-      
-      query += ' ORDER BY dr.created_at DESC';
-      
+
+      query += " ORDER BY dr.created_at DESC";
+
       const [requests] = await this.sequelize.query(query, { bind: params });
       return requests;
     } catch (error) {
-      console.error('Error getting deletion requests:', error);
+      console.error("Error getting deletion requests:", error);
       throw error;
     }
   }
@@ -2291,24 +2447,27 @@ class NeonService {
       const values = [];
       let paramIndex = 1;
 
-      Object.keys(updates).forEach(key => {
+      Object.keys(updates).forEach((key) => {
         setClauses.push(`${key} = $${paramIndex}`);
         values.push(updates[key]);
         paramIndex++;
       });
 
       values.push(requestId);
-      
-      const [result] = await this.sequelize.query(`
+
+      const [result] = await this.sequelize.query(
+        `
         UPDATE deletion_requests 
-        SET ${setClauses.join(', ')}, updated_at = NOW()
+        SET ${setClauses.join(", ")}, updated_at = NOW()
         WHERE id = $${paramIndex}
         RETURNING *
-      `, { bind: values });
-      
+      `,
+        { bind: values },
+      );
+
       return result[0];
     } catch (error) {
-      console.error('Error updating deletion request:', error);
+      console.error("Error updating deletion request:", error);
       throw error;
     }
   }
@@ -2318,8 +2477,10 @@ class NeonService {
    */
   async getPlacementAnalytics(filters = {}) {
     try {
-      const placedColumns = await this.getTableColumns('placed_students');
-      const placedDriveColumn = placedColumns.has('job_drive_id') ? 'job_drive_id' : 'drive_id';
+      const placedColumns = await this.getTableColumns("placed_students");
+      const placedDriveColumn = placedColumns.has("job_drive_id")
+        ? "job_drive_id"
+        : "drive_id";
       const [analytics] = await this.sequelize.query(`
         SELECT 
           COUNT(DISTINCT ps.student_id) as total_placed,
@@ -2330,10 +2491,10 @@ class NeonService {
         FROM placed_students ps
         LEFT JOIN job_drives jd ON ps.${placedDriveColumn} = jd.id
       `);
-      
+
       return analytics[0];
     } catch (error) {
-      console.error('Error getting placement analytics:', error);
+      console.error("Error getting placement analytics:", error);
       throw error;
     }
   }
@@ -2346,16 +2507,21 @@ class NeonService {
       const drive = await this.findJobDriveById(driveId);
       const placedStudents = (studentIds || []).map((studentId) => ({
         studentId,
-        status: placementData.status || 'placed',
+        status: placementData.status || "placed",
         addedBy: placementData.addedBy || null,
         addedAt: new Date(),
       }));
 
-      await this.replacePlacedStudents(driveId, drive?.companyName || '', placedStudents, placementData.addedBy || null);
+      await this.replacePlacedStudents(
+        driveId,
+        drive?.companyName || "",
+        placedStudents,
+        placementData.addedBy || null,
+      );
 
       return true;
     } catch (error) {
-      console.error('Error finalizing placement:', error);
+      console.error("Error finalizing placement:", error);
       throw error;
     }
   }
@@ -2365,9 +2531,13 @@ class NeonService {
    */
   async updatePlacedStudent(driveId, studentId, updates) {
     try {
-      const placedColumns = await this.getTableColumns('placed_students');
-      const driveColumn = placedColumns.has('job_drive_id') ? 'job_drive_id' : 'drive_id';
-      const studentColumn = placedColumns.has('student_id') ? 'student_id' : null;
+      const placedColumns = await this.getTableColumns("placed_students");
+      const driveColumn = placedColumns.has("job_drive_id")
+        ? "job_drive_id"
+        : "drive_id";
+      const studentColumn = placedColumns.has("student_id")
+        ? "student_id"
+        : null;
       const setClauses = [];
       const values = [];
       let paramIndex = 1;
@@ -2383,15 +2553,18 @@ class NeonService {
         ? `${driveColumn} = $${paramIndex} AND ${studentColumn} = $${paramIndex + 1}`
         : `${driveColumn} = $${paramIndex} AND id = $${paramIndex + 1}`;
 
-      await this.sequelize.query(`
+      await this.sequelize.query(
+        `
         UPDATE placed_students 
-        SET ${setClauses.join(', ')}, updated_at = NOW()
+        SET ${setClauses.join(", ")}, updated_at = NOW()
         WHERE ${whereClause}
-      `, { bind: values });
+      `,
+        { bind: values },
+      );
 
       return true;
     } catch (error) {
-      console.error('Error updating placed student:', error);
+      console.error("Error updating placed student:", error);
       throw error;
     }
   }
@@ -2401,17 +2574,24 @@ class NeonService {
    */
   async deletePlacedStudent(driveId, studentId) {
     try {
-      const placedColumns = await this.getTableColumns('placed_students');
-      const driveColumn = placedColumns.has('job_drive_id') ? 'job_drive_id' : 'drive_id';
-      const studentColumn = placedColumns.has('student_id') ? 'student_id' : 'id';
-      await this.sequelize.query(`
+      const placedColumns = await this.getTableColumns("placed_students");
+      const driveColumn = placedColumns.has("job_drive_id")
+        ? "job_drive_id"
+        : "drive_id";
+      const studentColumn = placedColumns.has("student_id")
+        ? "student_id"
+        : "id";
+      await this.sequelize.query(
+        `
         DELETE FROM placed_students 
         WHERE ${driveColumn} = $1 AND ${studentColumn} = $2
-      `, { bind: [driveId, studentId] });
-      
+      `,
+        { bind: [driveId, studentId] },
+      );
+
       return true;
     } catch (error) {
-      console.error('Error deleting placed student:', error);
+      console.error("Error deleting placed student:", error);
       throw error;
     }
   }
@@ -2426,18 +2606,18 @@ class NeonService {
         WHERE created_by = $1
       `;
       const params = [prId];
-      
+
       if (department) {
-        query += ' AND spoc_dept = $2';
+        query += " AND spoc_dept = $2";
         params.push(department);
       }
-      
-      query += ' ORDER BY created_at DESC';
-      
+
+      query += " ORDER BY created_at DESC";
+
       const [jobs] = await this.sequelize.query(query, { bind: params });
-      return jobs.map(j => this.formatJobDriveFromNeon(j));
+      return jobs.map((j) => this.formatJobDriveFromNeon(j));
     } catch (error) {
-      console.error('Error getting PR jobs:', error);
+      console.error("Error getting PR jobs:", error);
       throw error;
     }
   }
@@ -2447,8 +2627,10 @@ class NeonService {
    */
   async getPRStats(prId) {
     try {
-      const { tableName, driveColumn } = await this.getApplicationsTableConfig();
-      const [stats] = await this.sequelize.query(`
+      const { tableName, driveColumn } =
+        await this.getApplicationsTableConfig();
+      const [stats] = await this.sequelize.query(
+        `
         SELECT 
           COUNT(*) as total_drives,
           COUNT(CASE WHEN is_active = true THEN 1 END) as active_drives,
@@ -2457,91 +2639,13 @@ class NeonService {
            WHERE jd.created_by = $1) as total_applications
         FROM job_drives
         WHERE created_by = $1
-      `, { bind: [prId] });
-      
+      `,
+        { bind: [prId] },
+      );
+
       return stats[0];
     } catch (error) {
-      console.error('Error getting PR stats:', error);
-      throw error;
-    }
-  }
-
-  // ✅ ADDED
-  /**
-   * Get a detailed matrix of file submission status for all active drives.
-   * Returns one row per (drive x required file type).
-   */
-  async getDetailedFileSubmissionStatus(filters = {}) {
-    try {
-      const params = [];
-      let paramIndex = 1;
-      let whereClause = 'WHERE 1=1';
-
-      if (filters.fileType) {
-        whereClause += ` AND m.f_type = $${paramIndex++}`;
-        params.push(filters.fileType);
-      }
-
-      if (filters.department) {
-        whereClause += ` AND m.spoc_dept = $${paramIndex++}`;
-        params.push(filters.department);
-      }
-
-      if (filters.submissionStatus === 'Submitted') {
-        whereClause += ' AND jdf.id IS NOT NULL';
-      } else if (filters.submissionStatus === 'Not Submitted') {
-        whereClause += ' AND jdf.id IS NULL';
-      }
-
-      const sql = `
-        WITH file_types AS (
-          SELECT 'spoc' AS f_type
-          UNION ALL
-          SELECT 'expenditure' AS f_type
-        ),
-        expected_matrix AS (
-          SELECT
-            jd.id AS drive_id,
-            jd.company_name,
-            jd.role,
-            jd.spoc_dept,
-            ft.f_type
-          FROM job_drives jd
-          CROSS JOIN file_types ft
-          WHERE jd.is_active = true
-        )
-        SELECT DISTINCT ON (m.drive_id, m.f_type)
-          m.drive_id,
-          m.company_name,
-          m.role,
-          m.spoc_dept AS uploader_department,
-          m.f_type AS file_type,
-          jdf.id,
-          jdf.file_name,
-          jdf.file_url,
-          jdf.created_at,
-          u.name AS uploader_name,
-          u.email AS uploader_email,
-          CASE WHEN jdf.id IS NOT NULL THEN 'Submitted' ELSE 'Not Submitted' END AS submission_status,
-          (
-            SELECT COUNT(DISTINCT f2.file_type)
-            FROM job_drive_files f2
-            WHERE f2.job_drive_id::text = m.drive_id::text
-              AND f2.file_type IN ('spoc', 'expenditure')
-          ) = 2 AS is_drive_complete
-        FROM expected_matrix m
-        LEFT JOIN job_drive_files jdf
-          ON m.drive_id::text = jdf.job_drive_id::text
-          AND m.f_type = jdf.file_type
-        LEFT JOIN users u ON jdf.uploader_id = u.id
-        ${whereClause}
-        ORDER BY m.drive_id ASC, m.f_type ASC, jdf.created_at DESC
-      `;
-
-      const [rows] = await this.sequelize.query(sql, { bind: params });
-      return rows;
-    } catch (error) {
-      console.error('Error getting detailed file submission status:', error);
+      console.error("Error getting PR stats:", error);
       throw error;
     }
   }
