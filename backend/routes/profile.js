@@ -705,7 +705,7 @@ router.post("/upload-files", auth, (req, res) => {
           : currentProfile.marksheets,
       };
 
-      const isProfileNowComplete = checkProfileCompletion(profileWithNewFiles);
+      const isProfileNowComplete = currentProfile.is_profile_complete ? true : checkProfileCompletion(profileWithNewFiles);
 
       await sequelize.query(
         `UPDATE user_profiles
