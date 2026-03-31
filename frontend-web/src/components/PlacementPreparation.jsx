@@ -506,7 +506,7 @@ export default function PlacementPreparation() {
                     <div className="flex items-center space-x-4 text-sm text-gray-600">
                       <span>⏱️ {t.durationMins} mins</span>
                       <span>📅 Completed recently</span>
-                      <span>📊 Score: {t.score || 'N/A'}</span>
+                      <span>📊 Score: {t.score != null ? `${t.score}${t.total != null ? ` / ${t.total}` : ''}` : 'N/A'}</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">

@@ -601,7 +601,46 @@ router.get("/", auth, async (req, res) => {
             ? lastRound.selectedStudents.filter((id) => isUuid(id))
             : [];
 
-          if (alreadyPlaced || selectedIds.length === 0) continue;
+          if (alreadyPlaced) {
+            // Drive already finalized — still send any missed placement notifications idempotently.
+            const existingPlacedIds = drive.placedStudents
+              .map((p) => p.studentId)
+              .filter((id) => isUuid(id));
+            if (existingPlacedIds.length > 0) {
+              const title = `You have been placed in ${drive.companyName || "the company"}`;
+              const joiningDetails = [
+                drive.date ? `Drive Date: ${String(drive.date).slice(0, 10)}` : "",
+                drive.time ? `Time: ${drive.time}` : "",
+                drive.venue ? `Venue: ${drive.venue}` : "",
+              ].filter(Boolean).join("\n");
+              const ctcLine = drive.ctc ? `CTC: ${drive.ctc}` : "CTC: Will be shared by placement office";
+              const message = [
+                `You have been placed in ${drive.companyName || "the company"}${drive.role ? ` for ${drive.role}` : ""}.`,
+                ctcLine,
+                joiningDetails ? `\nJoining details:\n${joiningDetails}` : "",
+              ].filter(Boolean).join("\n");
+              await notificationService.createPlacementSuccessForUserIdsIfMissing({
+                userIds: existingPlacedIds,
+                driveId: String(drive?.id || drive?._id || ""),
+                title,
+                message,
+                metadata: {
+                  driveId: String(drive?.id || drive?._id || ""),
+                  company: drive.companyName,
+                  role: drive.role,
+                  package: drive.ctc || null,
+                  drive_name: [drive.companyName, drive.role].filter(Boolean).join(" - "),
+                  joining_details: joiningDetails || null,
+                },
+              });
+              if (io) {
+                existingPlacedIds.forEach((id) => io.to(`user:${id}`).emit("notification:new", { type: "placement_success" }));
+              }
+            }
+            continue;
+          }
+
+          if (selectedIds.length === 0) continue;
 
           const profiles = await fetchStudentProfilesByIds(selectedIds);
           const placedStudents = selectedIds
