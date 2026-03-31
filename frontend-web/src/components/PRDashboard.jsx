@@ -69,22 +69,8 @@ const PRDashboard = () => {
   };
 
   // ✅ ADDED
-  const handleDownloadFile = async (fileUrl, fileName) => {
-    try {
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Download error:", error);
-      toast.error("Failed to download file");
-    }
+  const handleDownloadFile = (fileUrl) => {
+    window.open(fileUrl, "_blank", "noopener,noreferrer");
   };
 
   // ✅ ADDED
@@ -878,7 +864,7 @@ const PRDashboard = () => {
                                   View
                                 </a>
                                 <button
-                                  onClick={() => handleDownloadFile(template.file_url, template.file_name)}
+                                  onClick={() => handleDownloadFile(template.download_url || template.file_url)}
                                   className="flex-1 bg-teal-600 text-white text-center py-2 px-4 rounded text-sm hover:bg-teal-700 transition-colors"
                                 >
                                   Download
