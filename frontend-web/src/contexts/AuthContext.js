@@ -37,18 +37,6 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      const navEntry = performance.getEntriesByType('navigation')[0];
-      const isReload = navEntry?.type === 'reload' || performance.navigation?.type === 1;
-
-      // Product requirement: refreshing any authenticated page should return user to login.
-      if (isReload) {
-        localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization'];
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
       const token = localStorage.getItem('token');
       if (token && token !== 'null' && token !== 'undefined') {
         try {
