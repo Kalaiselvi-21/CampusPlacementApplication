@@ -283,10 +283,10 @@ router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (re
     });
 
     await neonService.executeRawQuery(
-      `UPDATE box_files 
-       SET file_name = $1, file_url = $2, s3_key = $3, uploaded_at = NOW()
-       WHERE id = $4`,
-      [req.file.originalname, uploaded.url, uploaded.key, targetFileId]
+      `UPDATE box_files
+       SET file_name = $1, file_url = $2, s3_key = $3, batch = $4, uploaded_at = NOW()
+       WHERE id = $5`,
+      [req.file.originalname, uploaded.url, uploaded.key, batch, targetFileId]
     );
 
     const updatedRows = await neonService.executeRawQuery(
