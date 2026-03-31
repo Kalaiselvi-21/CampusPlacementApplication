@@ -323,6 +323,21 @@ const StudentDashboard = () => {
     }
   };
 
+  // Helper function to check if application deadline has passed
+  const isDeadlinePassed = (drive) => {
+    const checkDate = drive.deadline || drive.date;
+    if (!checkDate) return false;
+
+    const deadlineDate = new Date(checkDate);
+    if (drive.applicationDeadlineTime) {
+      const [hours, minutes] = String(drive.applicationDeadlineTime).split(":");
+      deadlineDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+    } else {
+      deadlineDate.setHours(23, 59, 59, 999);
+    }
+    return new Date() > deadlineDate;
+  };
+
   // Helper function to check if user is eligible for a drive
   const isEligibleForDrive = (drive) => {
     if (!user?.profile) return false;
@@ -959,6 +974,7 @@ const StudentDashboard = () => {
                               ✓ Applied
                             </span>
                           ) : !isDriveEnded(drive) &&
+                            !isDeadlinePassed(drive) &&
                             isEligibleForDrive(drive) ? (
                             <button
                               onClick={() => handleApply(drive._id)}
@@ -974,6 +990,10 @@ const StudentDashboard = () => {
                             >
                               Not Eligible
                             </button>
+                          ) : isDeadlinePassed(drive) ? (
+                            <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-medium">
+                              Deadline Passed
+                            </span>
                           ) : (
                             <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded text-sm font-medium">
                               Ended
