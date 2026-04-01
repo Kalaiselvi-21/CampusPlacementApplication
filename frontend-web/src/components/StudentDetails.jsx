@@ -34,6 +34,10 @@ const StudentDetails = () => {
   const [placementFilter, setPlacementFilter] = useState("all");
   const [availableDepartments, setAvailableDepartments] = useState([]);
   const [deletingStudentId, setDeletingStudentId] = useState(null);
+  const [sortConfig, setSortConfig] = useState({
+    key: "name",
+    direction: "asc",
+  });
 
   const getUniqueDepartments = (students) => {
     const departments = students
@@ -44,26 +48,79 @@ const StudentDetails = () => {
     return departments;
   };
 
-  const getFilteredStudents = () => {
-    return studentsDetails.filter((student) => {
-      // Department filter
+  const getPlacementValue = (student) => {
+    const normalizedStatus = String(student?.placementStatus || "")
+      .trim()
+      .toLowerCase();
+    return normalizedStatus === "placed" || Boolean(student?.isPlaced);
+  };
+
+  const requestSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
+  const getSortIndicator = (key) => {
+    if (sortConfig.key !== key) return "↕";
+    return sortConfig.direction === "asc" ? "↑" : "↓";
+  };
+
+  const SORT_OPTIONS = [
+    { key: "name", label: "Name" },
+    { key: "rollNumber", label: "Roll No" },
+    { key: "department", label: "Department" },
+    { key: "cgpa", label: "CGPA" },
+    { key: "placement", label: "Placement Status" },
+    { key: "registeredAt", label: "Registered Date" },
+  ];
+
+  const filteredAndSortedStudents = useMemo(() => {
+    const filtered = studentsDetails.filter((student) => {
       const departmentMatch =
         departmentFilter === "all" || student.department === departmentFilter;
 
-      // Placement filter - match the logic used in the table display
       let placementMatch = true;
       if (placementFilter === "placed") {
-        placementMatch =
-          student.placementStatus === "placed" || student.isPlaced;
+        placementMatch = getPlacementValue(student);
       } else if (placementFilter === "unplaced") {
-        placementMatch = !(
-          student.placementStatus === "placed" || student.isPlaced
-        );
+        placementMatch = !getPlacementValue(student);
       }
 
       return departmentMatch && placementMatch;
     });
-  };
+
+    const sorted = [...filtered].sort((a, b) => {
+      const dir = sortConfig.direction === "asc" ? 1 : -1;
+      switch (sortConfig.key) {
+        case "name":
+          return dir * String(a.name || "").localeCompare(String(b.name || ""));
+        case "rollNumber":
+          return dir * String(a.rollNumber || "").localeCompare(String(b.rollNumber || ""));
+        case "department":
+          return dir * String(a.department || "").localeCompare(String(b.department || ""));
+        case "cgpa": {
+          const aCgpa = Number.parseFloat(a.cgpa) || 0;
+          const bCgpa = Number.parseFloat(b.cgpa) || 0;
+          return dir * (aCgpa - bCgpa);
+        }
+        case "placement":
+          return dir * (Number(getPlacementValue(a)) - Number(getPlacementValue(b)));
+        case "registeredAt": {
+          const aDate = a.registeredAt ? new Date(a.registeredAt).getTime() : 0;
+          const bDate = b.registeredAt ? new Date(b.registeredAt).getTime() : 0;
+          return dir * (aDate - bDate);
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  }, [studentsDetails, departmentFilter, placementFilter, sortConfig]);
 
   useEffect(() => {
     if (!user || (user.role !== "po" && user.role !== "placement_officer")) {
@@ -103,7 +160,7 @@ const StudentDetails = () => {
   };
 
   const downloadStudentsCSV = () => {
-    const filteredStudents = getFilteredStudents();
+    const filteredStudents = filteredAndSortedStudents;
 
     if (!filteredStudents?.length) {
       toast.error("No student data to download");
@@ -263,7 +320,7 @@ const StudentDetails = () => {
               </h1>
               <p className="text-gray-600 mt-1">
                 Complete information of all registered students (
-                {getFilteredStudents().length} of {studentsDetails.length}{" "}
+                {filteredAndSortedStudents.length} of {studentsDetails.length}{" "}
                 shown)
               </p>
             </div>
@@ -271,7 +328,7 @@ const StudentDetails = () => {
           <div className="flex space-x-3">
             <button
               onClick={downloadStudentsCSV}
-              disabled={getFilteredStudents().length === 0}
+              disabled={filteredAndSortedStudents.length === 0}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
             >
               <svg
@@ -287,7 +344,7 @@ const StudentDetails = () => {
                   d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                 />
               </svg>
-              <span>Download CSV ({getFilteredStudents().length})</span>
+              <span>Download CSV ({filteredAndSortedStudents.length})</span>
             </button>
             <button
               onClick={() => navigate("/po-dashboard")}
@@ -336,7 +393,7 @@ const StudentDetails = () => {
 
             <div className="flex items-center space-x-2 ml-auto">
               <span className="text-sm text-gray-600">
-                Showing {getFilteredStudents().length} of{" "}
+                Showing {filteredAndSortedStudents.length} of{" "}
                 {studentsDetails.length} students
               </span>
               <button
@@ -353,7 +410,7 @@ const StudentDetails = () => {
         </div>
 
         <div className="bg-white shadow rounded-lg overflow-hidden">
-          {getFilteredStudents().length === 0 ? (
+          {filteredAndSortedStudents.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500 text-lg">
                 {studentsDetails.length === 0
@@ -362,21 +419,65 @@ const StudentDetails = () => {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="px-4 py-3 border-b bg-gray-50 flex flex-wrap gap-3 items-center">
+                <label className="text-sm text-gray-700">
+                  Sort by:
+                  <select
+                    value={sortConfig.key}
+                    onChange={(e) =>
+                      setSortConfig((prev) => ({ ...prev, key: e.target.value }))
+                    }
+                    className="ml-2 px-2 py-1 border border-gray-300 rounded text-sm"
+                  >
+                    {SORT_OPTIONS.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm text-gray-700">
+                  Direction:
+                  <select
+                    value={sortConfig.direction}
+                    onChange={(e) =>
+                      setSortConfig((prev) => ({
+                        ...prev,
+                        direction: e.target.value,
+                      }))
+                    }
+                    className="ml-2 px-2 py-1 border border-gray-300 rounded text-sm"
+                  >
+                    <option value="asc">Ascending</option>
+                    <option value="desc">Descending</option>
+                  </select>
+                </label>
+              </div>
+              <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       S.No
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
+                    <th
+                      onClick={() => requestSort("name")}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    >
+                      Name {getSortIndicator("name")}
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Roll No
+                    <th
+                      onClick={() => requestSort("rollNumber")}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    >
+                      Roll No {getSortIndicator("rollNumber")}
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Department
+                    <th
+                      onClick={() => requestSort("department")}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    >
+                      Department {getSortIndicator("department")}
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Degree
@@ -384,8 +485,11 @@ const StudentDetails = () => {
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Grad Year
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      CGPA
+                    <th
+                      onClick={() => requestSort("cgpa")}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    >
+                      CGPA {getSortIndicator("cgpa")}
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Gender
@@ -441,8 +545,11 @@ const StudentDetails = () => {
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Skills
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Placement Status
+                    <th
+                      onClick={() => requestSort("placement")}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    >
+                      Placement Status {getSortIndicator("placement")}
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Consent Status
@@ -465,8 +572,11 @@ const StudentDetails = () => {
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Profile Status
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Registered
+                    <th
+                      onClick={() => requestSort("registeredAt")}
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    >
+                      Registered {getSortIndicator("registeredAt")}
                     </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -474,7 +584,7 @@ const StudentDetails = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {getFilteredStudents().map((student, index) => (
+                  {filteredAndSortedStudents.map((student, index) => (
                     <tr key={student._id} className="hover:bg-gray-50">
                       <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                         {index + 1}
@@ -624,16 +734,14 @@ const StudentDetails = () => {
                       <td className="px-3 py-4 whitespace-nowrap text-sm">
                         <span
                           className={`px-2 py-1 text-xs rounded-full ${
-                            student.placementStatus === "placed" ||
-                            student.isPlaced
+                            getPlacementValue(student)
                               ? "bg-green-100 text-green-800"
                               : student.placementStatus === "unplaced"
                                 ? "bg-red-100 text-red-800"
                                 : "bg-gray-100 text-gray-800"
                           }`}
                         >
-                          {student.placementStatus === "placed" ||
-                          student.isPlaced
+                          {getPlacementValue(student)
                             ? "Placed"
                             : "Unplaced"}
                         </span>
@@ -766,6 +874,7 @@ const StudentDetails = () => {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       </div>

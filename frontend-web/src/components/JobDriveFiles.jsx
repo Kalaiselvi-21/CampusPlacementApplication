@@ -75,18 +75,16 @@ const JobDriveFiles = () => {
     });
   };
 
-  const handleDownloadFile = async (fileUrl, fileName) => {
+  const handleDownloadFile = (fileUrl, fileName) => {
     try {
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
+      link.href = fileUrl;
       link.setAttribute('download', fileName);
+      link.setAttribute('target', '_blank');
+      link.setAttribute('rel', 'noopener noreferrer');
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download file");

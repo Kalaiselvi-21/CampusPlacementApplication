@@ -2,13 +2,14 @@ const express = require("express");
 const multer = require("multer");
 const csv = require("csv-parser");
 const fs = require("fs");
+const os = require("os");
 const { auth } = require("../middleware/auth");
 const neonService = require("../services/database/neonService");
 const logger = require("../services/database/logger");
 const { emitCGPAUpdate } = require("../utils/socketUtils");
 
 const router = express.Router();
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ dest: os.tmpdir() });
 
 const normalizeRole = (role) =>
   String(role || "")

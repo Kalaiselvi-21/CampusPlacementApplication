@@ -254,24 +254,83 @@ router.get("/all-summary", auth, ensureTable, async (req, res) => {
 
     const { fileType, submissionStatus, department } = req.query;
 
-    // 🔥 CLEAN QUERY HERE
-    let filters = {};
+    const conditions = [];
+    const params = [];
+    let idx = 1;
 
     if (fileType && fileType !== "all") {
-      filters.fileType = fileType;
+      conditions.push(`ft.file_type = $${idx++}`);
+      params.push(fileType);
     }
 
     if (submissionStatus && submissionStatus !== "all") {
-      filters.submissionStatus = submissionStatus;
+      conditions.push(
+        `(CASE WHEN lf.id IS NULL THEN 'Not Submitted' ELSE 'Submitted' END) = $${idx++}`
+      );
+      params.push(submissionStatus);
     }
 
     if (department && department !== "all") {
-      filters.department = department;
+      conditions.push(
+        `COALESCE(up.department, jd.spoc_dept, 'N/A') = $${idx++}`
+      );
+      params.push(department);
     }
 
-    console.log("Filters sent to service:", filters);
+    const whereClause = conditions.length
+      ? `WHERE ${conditions.join(" AND ")}`
+      : "";
 
-    const result = await neonService.getDetailedFileSubmissionStatus(filters);
+    const query = `
+      WITH file_types AS (
+        SELECT 'spoc'::text AS file_type
+        UNION ALL
+        SELECT 'expenditure'::text AS file_type
+      ),
+      latest_files AS (
+        SELECT DISTINCT ON (f.job_drive_id, f.file_type)
+          f.id,
+          f.job_drive_id,
+          f.file_type,
+          f.file_name,
+          f.file_url,
+          f.uploader_id,
+          f.created_at
+        FROM job_drive_files f
+        ORDER BY f.job_drive_id, f.file_type, f.created_at DESC
+      )
+      SELECT
+        jd.id AS drive_id,
+        jd.company_name,
+        jd.role,
+        ft.file_type,
+        COALESCE(lf.file_name, '-') AS file_name,
+        lf.file_url,
+        COALESCE(up.department, jd.spoc_dept, 'N/A') AS uploader_department,
+        CASE WHEN lf.id IS NULL THEN 'Not Submitted' ELSE 'Submitted' END AS submission_status,
+        (
+          EXISTS (
+            SELECT 1 FROM latest_files l1
+            WHERE l1.job_drive_id = jd.id AND l1.file_type = 'spoc'
+          )
+          AND
+          EXISTS (
+            SELECT 1 FROM latest_files l2
+            WHERE l2.job_drive_id = jd.id AND l2.file_type = 'expenditure'
+          )
+        ) AS is_drive_complete
+      FROM job_drives jd
+      CROSS JOIN file_types ft
+      LEFT JOIN latest_files lf
+        ON lf.job_drive_id = jd.id
+       AND lf.file_type = ft.file_type
+      LEFT JOIN user_profiles up
+        ON up.user_id = lf.uploader_id
+      ${whereClause}
+      ORDER BY jd.created_at DESC, jd.company_name ASC, ft.file_type ASC
+    `;
+
+    const result = await neonService.executeRawQuery(query, params);
 
     const matrix = await Promise.all(result.map(async (row) => {
       if (row.file_url) {
