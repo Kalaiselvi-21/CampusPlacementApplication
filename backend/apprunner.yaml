@@ -3,9 +3,10 @@ runtime: nodejs22
 build:
   commands:
     build:
-      - npm install --production
+      - npm install
+      - npm run build
 run:
-  command: node server.js
+  command: node dist/server.js
   network:
     port: 5000
     env: PORT

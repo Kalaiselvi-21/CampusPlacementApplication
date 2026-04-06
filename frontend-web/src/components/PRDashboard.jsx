@@ -12,6 +12,7 @@ const PRDashboard = () => {
   const [allDrives, setAllDrives] = useState([]);
   const [eligibleDrives, setEligibleDrives] = useState([]);
   const [departmentApplications, setDepartmentApplications] = useState(0);
+  const [myTestsCount, setMyTestsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -69,8 +70,16 @@ const PRDashboard = () => {
   };
 
   // ✅ ADDED
-  const handleDownloadFile = (fileUrl) => {
-    window.open(fileUrl, "_blank", "noopener,noreferrer");
+  const handleDownloadFile = (downloadUrl, fallbackUrl) => {
+    const url = downloadUrl || fallbackUrl;
+    if (!url) return;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   // ✅ ADDED
@@ -464,6 +473,16 @@ const PRDashboard = () => {
       });
 
       setDepartmentApplications(departmentDrives.length);
+
+      // Fetch PR's own tests count
+      try {
+        const testsResponse = await axios.get(`${API_BASE}/api/prep/tests/mine`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setMyTestsCount((testsResponse.data.tests || []).length);
+      } catch {
+        setMyTestsCount(0);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
       if (error.response?.status === 401) {
@@ -530,7 +549,7 @@ const PRDashboard = () => {
         </div>
 
         {/* Stats Cards - Fix the calculations */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <div className="bg-white p-6 rounded-lg shadow">
             <h3 className="text-lg font-semibold text-gray-900">
               All Available Drives
@@ -567,6 +586,20 @@ const PRDashboard = () => {
             </p>
             <p className="text-sm text-gray-500 mt-1">
               Currently ongoing drives
+            </p>
+          </div>
+          <div
+            className="bg-white p-6 rounded-lg shadow cursor-pointer hover:shadow-md transition"
+            onClick={() => navigate("/placement-preparation")}
+          >
+            <h3 className="text-lg font-semibold text-gray-900">
+              My Tests
+            </h3>
+            <p className="text-3xl font-bold text-indigo-600">
+              {myTestsCount}
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage &amp; view past tests
             </p>
           </div>
         </div>
@@ -864,7 +897,7 @@ const PRDashboard = () => {
                                   View
                                 </a>
                                 <button
-                                  onClick={() => handleDownloadFile(template.download_url || template.file_url)}
+                                  onClick={() => handleDownloadFile(template.download_url, template.file_url)}
                                   className="flex-1 bg-teal-600 text-white text-center py-2 px-4 rounded text-sm hover:bg-teal-700 transition-colors"
                                 >
                                   Download

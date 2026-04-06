@@ -176,12 +176,12 @@ router.post("/upload", auth, ensureTables, upload.single("file"), async (req, re
     }
 
     const existing = await neonService.executeRawQuery(
-      "SELECT id FROM box_files WHERE pr_id = $1 AND batch = $2",
-      [req.user.id, batch]
+      "SELECT id FROM box_files WHERE pr_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+      [req.user.id]
     );
 
     if (existing[0]) {
-      return res.status(400).json({ message: "A file for this batch already exists. Use replace instead." });
+      return res.status(400).json({ message: "A box file already exists. Use replace instead." });
     }
 
     const uploaded = await uploadMulterFileToS3(req.file, {
@@ -253,11 +253,11 @@ router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (re
 
     let targetFileId = fileId;
 
-    // If the provided id is stale, try to recover using PR+batch latest record.
+    // If the provided id is stale, recover using the PR's latest record (one active file per PR).
     if (!rows[0]) {
       const fallbackRows = await neonService.executeRawQuery(
-        "SELECT id, s3_key FROM box_files WHERE pr_id = $1 AND batch = $2 ORDER BY uploaded_at DESC LIMIT 1",
-        [req.user.id, batch]
+        "SELECT id, s3_key FROM box_files WHERE pr_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+        [req.user.id]
       );
 
       if (fallbackRows[0]) {

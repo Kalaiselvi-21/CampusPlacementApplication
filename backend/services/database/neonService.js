@@ -1871,6 +1871,7 @@ class NeonService {
       LEFT JOIN users u ON jd.created_by = u.id
       WHERE jd.is_active = true
       AND jd.drive_date >= CURRENT_DATE
+      AND (jd.deadline IS NULL OR jd.deadline >= CURRENT_DATE)
       AND (jd.eligibility_min_cgpa IS NULL OR jd.eligibility_min_cgpa <= $1)
       AND (jd.eligibility_max_backlogs IS NULL OR jd.eligibility_max_backlogs >= $2)
       AND (
@@ -2646,6 +2647,75 @@ class NeonService {
       return stats[0];
     } catch (error) {
       console.error("Error getting PR stats:", error);
+      throw error;
+    }
+  }
+
+  async getDetailedFileSubmissionStatus(filters = {}) {
+    try {
+      const conditions = [];
+      const params = [];
+
+      if (filters.fileType) {
+        params.push(filters.fileType);
+        conditions.push(`ft.file_type = $${params.length}`);
+      }
+
+      if (filters.submissionStatus) {
+        if (filters.submissionStatus === "submitted") {
+          conditions.push("f.id IS NOT NULL");
+        } else if (filters.submissionStatus === "not_submitted") {
+          conditions.push("f.id IS NULL");
+        }
+      }
+
+      if (filters.department) {
+        params.push(filters.department);
+        conditions.push(`d.department = $${params.length}`);
+      }
+
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const rows = await this.executeRawQuery(
+        `
+        WITH dept_list AS (
+          SELECT DISTINCT department
+          FROM user_profiles
+          WHERE department IS NOT NULL AND department <> ''
+        ),
+        file_types(file_type) AS (
+          VALUES ('spoc'), ('expenditure')
+        )
+        SELECT
+          jd.id::text           AS drive_id,
+          jd.company_name,
+          jd.role,
+          d.department          AS uploader_department,
+          ft.file_type,
+          f.file_name,
+          f.file_url,
+          CASE WHEN f.id IS NOT NULL THEN 'submitted' ELSE 'not_submitted' END AS submission_status,
+          (jd.status = 'completed') AS is_drive_complete
+        FROM job_drives jd
+        CROSS JOIN file_types ft
+        CROSS JOIN dept_list d
+        LEFT JOIN LATERAL (
+          SELECT f2.id, f2.file_name, f2.file_url
+          FROM job_drive_files f2
+          JOIN user_profiles up ON up.user_id = f2.uploader_id AND up.department = d.department
+          WHERE f2.job_drive_id = jd.id::text AND f2.file_type = ft.file_type
+          ORDER BY f2.created_at DESC
+          LIMIT 1
+        ) f ON true
+        ${whereClause}
+        ORDER BY jd.created_at DESC, d.department, ft.file_type
+        `,
+        params
+      );
+
+      return rows;
+    } catch (error) {
+      console.error("Error in getDetailedFileSubmissionStatus:", error);
       throw error;
     }
   }

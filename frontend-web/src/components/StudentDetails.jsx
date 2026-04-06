@@ -69,15 +69,6 @@ const StudentDetails = () => {
     return sortConfig.direction === "asc" ? "↑" : "↓";
   };
 
-  const SORT_OPTIONS = [
-    { key: "name", label: "Name" },
-    { key: "rollNumber", label: "Roll No" },
-    { key: "department", label: "Department" },
-    { key: "cgpa", label: "CGPA" },
-    { key: "placement", label: "Placement Status" },
-    { key: "registeredAt", label: "Registered Date" },
-  ];
-
   const filteredAndSortedStudents = useMemo(() => {
     const filtered = studentsDetails.filter((student) => {
       const departmentMatch =

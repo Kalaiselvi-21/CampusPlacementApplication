@@ -108,6 +108,7 @@ const StudentDashboard = () => {
       setAllDrives(allDrivesData);
 
       // Fetch available tests
+      let availableTestsCount = 0;
       try {
         const testsResponse = await axios.get(
           `${API_BASE}/api/prep/tests/available`,
@@ -117,6 +118,7 @@ const StudentDashboard = () => {
         );
         const tests = testsResponse.data.tests || [];
         setAvailableTests(tests);
+        availableTestsCount = tests.length;
         console.log("Available tests:", tests.length);
       } catch (error) {
         console.error("Error fetching tests:", error);
@@ -148,7 +150,7 @@ const StudentDashboard = () => {
         appliedDrives: applied,
         availableDrives: available,
         allDrives: allDrivesData.length,
-        availableTests: availableTests.length,
+        availableTests: availableTestsCount,
       });
     } catch (error) {
       console.error("=== FETCH ERROR ===");
@@ -887,10 +889,11 @@ const StudentDashboard = () => {
                 </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Available Tests</p>
+                <p className="text-sm font-medium text-gray-600">Placement Tests</p>
                 <p className="text-2xl font-semibold text-gray-900">
                   {availableTests.length}
                 </p>
+                <p className="text-xs text-gray-400 mt-1">Available now · view past</p>
               </div>
             </div>
           </div>

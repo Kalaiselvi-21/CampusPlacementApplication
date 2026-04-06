@@ -9,7 +9,13 @@ const logger = require("../services/database/logger");
 const { emitCGPAUpdate } = require("../utils/socketUtils");
 
 const router = express.Router();
-const upload = multer({ dest: os.tmpdir() });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) =>
+      cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+  }),
+});
 
 const normalizeRole = (role) =>
   String(role || "")

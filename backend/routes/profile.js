@@ -21,29 +21,49 @@ const normalizePgArray = (val) => {
   return [];
 };
 
-// Helper function to check if profile is complete
-const checkProfileCompletion = (profileRow) => {
+// Helper function to check if profile is complete — role-aware.
+const checkProfileCompletion = (profileRow, role) => {
   const up = profileRow || {};
-  const requiredFields = [
-    { key: "profile_name" },
-    { key: "gender" },
-    { key: "degree" },
-    { key: "date_of_birth" },
-    { key: "personal_email" },
-    { key: "college_email" },
-    { key: "tenth_percentage" },
-    { key: "phone_number" },
-    { key: "linkedin_url" },
-    { key: "department" },
-    { key: "graduation_year" },
-    { key: "address" },
-    { key: "about_me" },
-    { key: "resume_drive_link" },
-    { key: "pan_card_drive_link" },
-    { key: "aadhar_card_drive_link" },
-    { key: "photo" },
-    { key: "resume" },
-  ];
+  const normalizedRole = String(role || "").toLowerCase().replace(/\s+/g, "_");
+
+  let requiredFields;
+  if (normalizedRole === "placement_representative" || normalizedRole === "pr") {
+    // PRs only need a name, department, phone, and photo to be considered complete.
+    requiredFields = [
+      { key: "profile_name" },
+      { key: "phone_number" },
+      { key: "department" },
+      { key: "photo" },
+    ];
+  } else if (
+    normalizedRole === "placement_officer" ||
+    normalizedRole === "po" ||
+    normalizedRole === "admin"
+  ) {
+    requiredFields = [{ key: "profile_name" }];
+  } else {
+    // Students require the full set.
+    requiredFields = [
+      { key: "profile_name" },
+      { key: "gender" },
+      { key: "degree" },
+      { key: "date_of_birth" },
+      { key: "personal_email" },
+      { key: "college_email" },
+      { key: "tenth_percentage" },
+      { key: "phone_number" },
+      { key: "linkedin_url" },
+      { key: "department" },
+      { key: "graduation_year" },
+      { key: "address" },
+      { key: "about_me" },
+      { key: "resume_drive_link" },
+      { key: "pan_card_drive_link" },
+      { key: "aadhar_card_drive_link" },
+      { key: "photo" },
+      { key: "resume" },
+    ];
+  }
 
   const missingFields = requiredFields.filter(
     (f) => !up[f.key] || (Array.isArray(up[f.key]) && up[f.key].length === 0),
@@ -596,6 +616,9 @@ router.put("/basic-info", auth, async (req, res) => {
         email: finalUser.email,
         role: finalUser.role,
         profile: finalProfile,
+        isProfileComplete: finalProfile.isProfileComplete,
+        placementPolicyConsent: finalUser.placementPolicyConsent || {},
+        verificationStatus: finalUser.verificationStatus || {},
       },
       database: "NEON",
     });
@@ -705,7 +728,7 @@ router.post("/upload-files", auth, (req, res) => {
           : currentProfile.marksheets,
       };
 
-      const isProfileNowComplete = currentProfile.is_profile_complete ? true : checkProfileCompletion(profileWithNewFiles);
+      const isProfileNowComplete = currentProfile.is_profile_complete ? true : checkProfileCompletion(profileWithNewFiles, req.user.role);
 
       await sequelize.query(
         `UPDATE user_profiles
@@ -748,6 +771,9 @@ router.post("/upload-files", auth, (req, res) => {
           email: updatedUser.email,
           role: updatedUser.role,
           profile: updatedUser.profile || {},
+          isProfileComplete: updatedUser.profile?.isProfileComplete || false,
+          placementPolicyConsent: updatedUser.placementPolicyConsent || {},
+          verificationStatus: updatedUser.verificationStatus || {},
         },
         database: "NEON",
       });

@@ -287,9 +287,11 @@ router.get('/past', authMiddleware, async (req, res) => {
                NULL::numeric AS score, NULL::numeric AS total
         FROM tests t
         WHERE t.created_by = $1
-          AND t.end_at IS NOT NULL
-          AND t.end_at < NOW()
-        ORDER BY t.end_at DESC
+          AND (
+            (t.end_at IS NOT NULL AND t.end_at < NOW())
+            OR t.status = 'closed'
+          )
+        ORDER BY COALESCE(t.end_at, t.updated_at) DESC
         `,
         [req.user.id]
       );
