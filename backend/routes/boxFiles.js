@@ -160,7 +160,7 @@ router.get("/all", auth, ensureTables, async (req, res) => {
 router.post("/upload", auth, ensureTables, upload.single("file"), async (req, res) => {
   // ⚠️ IMPORTANT: only PR users can upload their department box files.
   if (!isPR(req.user)) {
-    return res.status(403).json({ message: "Access denied" });
+    return res.status(403).json({ message: "Only PR users can upload box files." });
   }
   try {
     const { batch, department } = req.body;
@@ -229,7 +229,7 @@ router.post("/upload", auth, ensureTables, upload.single("file"), async (req, re
 router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (req, res) => {
   // ⚠️ IMPORTANT: only PR owner can replace their file.
   if (!isPR(req.user)) {
-    return res.status(403).json({ message: "Access denied" });
+    return res.status(403).json({ message: "Only PR users can replace box files." });
   }
   try {
     const fileId = req.params.id;
@@ -246,26 +246,30 @@ router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (re
       return res.status(403).json({ message: "Box file upload is currently disabled by PO." });
     }
 
-    let rows = await neonService.executeRawQuery(
-      "SELECT s3_key FROM box_files WHERE id = $1 AND pr_id = $2",
-      [fileId, req.user.id]
+    const rows = await neonService.executeRawQuery(
+      "SELECT id, pr_id, s3_key FROM box_files WHERE id = $1 LIMIT 1",
+      [fileId]
     );
 
-    let targetFileId = fileId;
-
-    // If the provided id is stale, recover using the PR's latest record (one active file per PR).
     if (!rows[0]) {
-      const fallbackRows = await neonService.executeRawQuery(
-        "SELECT id, s3_key FROM box_files WHERE pr_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+      const latestOwnedRows = await neonService.executeRawQuery(
+        "SELECT id FROM box_files WHERE pr_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
         [req.user.id]
       );
 
-      if (fallbackRows[0]) {
-        rows = [{ s3_key: fallbackRows[0].s3_key }];
-        targetFileId = fallbackRows[0].id;
-      } else {
-        return res.status(404).json({ message: "File record not found" });
+      if (latestOwnedRows[0]) {
+        return res.status(409).json({
+          message: "The selected box file record is stale. Refresh and try again.",
+          staleRecord: true,
+          currentFileId: latestOwnedRows[0].id,
+        });
       }
+
+      return res.status(404).json({ message: "Box file record not found. It may have been deleted." });
+    }
+
+    if (String(rows[0].pr_id) !== String(req.user.id)) {
+      return res.status(403).json({ message: "You can only replace your own box file." });
     }
 
     if (rows[0].s3_key) {
@@ -286,12 +290,12 @@ router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (re
       `UPDATE box_files
        SET file_name = $1, file_url = $2, s3_key = $3, batch = $4, uploaded_at = NOW()
        WHERE id = $5`,
-      [req.file.originalname, uploaded.url, uploaded.key, batch, targetFileId]
+      [req.file.originalname, uploaded.url, uploaded.key, batch, fileId]
     );
 
     const updatedRows = await neonService.executeRawQuery(
       "SELECT * FROM box_files WHERE id = $1 LIMIT 1",
-      [targetFileId]
+      [fileId]
     );
 
     try {
@@ -308,7 +312,7 @@ router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (re
     res.json({
       message: "Box file replaced successfully",
       file: updatedRows[0] || {
-        id: targetFileId,
+        id: fileId,
         file_name: req.file.originalname,
         file_url: uploaded.url,
         batch,
@@ -318,6 +322,69 @@ router.post("/replace/:id", auth, ensureTables, upload.single("file"), async (re
   } catch (error) {
     console.error("Replace error details:", error);
     res.status(500).json({ message: "Failed to replace box file", error: error.message });
+  }
+});
+
+router.patch("/:id", auth, ensureTables, async (req, res) => {
+  if (!isPR(req.user)) {
+    return res.status(403).json({ message: "Only PR users can update box file details." });
+  }
+
+  try {
+    const fileId = req.params.id;
+    const batch = String(req.body?.batch || "").trim();
+
+    if (!batch) {
+      return res.status(400).json({ message: "Batch is required." });
+    }
+
+    if (!/^\d{4}-\d{4}$/.test(batch)) {
+      return res.status(400).json({ message: "Batch must be in YYYY-YYYY format." });
+    }
+
+    const rows = await neonService.executeRawQuery(
+      "SELECT id, pr_id FROM box_files WHERE id = $1 LIMIT 1",
+      [fileId]
+    );
+
+    if (!rows[0]) {
+      const latestOwnedRows = await neonService.executeRawQuery(
+        "SELECT id FROM box_files WHERE pr_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+        [req.user.id]
+      );
+
+      if (latestOwnedRows[0]) {
+        return res.status(409).json({
+          message: "The selected box file record is stale. Refresh and try again.",
+          staleRecord: true,
+          currentFileId: latestOwnedRows[0].id,
+        });
+      }
+
+      return res.status(404).json({ message: "Box file record not found. It may have been deleted." });
+    }
+
+    if (String(rows[0].pr_id) !== String(req.user.id)) {
+      return res.status(403).json({ message: "You can only update your own box file." });
+    }
+
+    await neonService.executeRawQuery(
+      "UPDATE box_files SET batch = $1, uploaded_at = NOW() WHERE id = $2",
+      [batch, fileId]
+    );
+
+    const updatedRows = await neonService.executeRawQuery(
+      "SELECT * FROM box_files WHERE id = $1 LIMIT 1",
+      [fileId]
+    );
+
+    return res.json({
+      message: "Batch updated successfully",
+      file: updatedRows[0] || null,
+    });
+  } catch (error) {
+    console.error("Batch update error:", error);
+    return res.status(500).json({ message: "Failed to update box file batch" });
   }
 });
 

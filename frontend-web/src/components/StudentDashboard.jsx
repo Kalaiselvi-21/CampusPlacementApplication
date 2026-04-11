@@ -676,7 +676,9 @@ const StudentDashboard = () => {
                     <span className="px-4 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium flex items-center">
                       ✓ Applied
                     </span>
-                  ) : !isDriveEnded(drive) && isEligibleForDrive(drive) ? (
+                  ) : !isDriveEnded(drive) &&
+                    !isDeadlinePassed(drive) &&
+                    isEligibleForDrive(drive) ? (
                     <button
                       onClick={() => {
                         handleApply(drive._id);
@@ -697,6 +699,10 @@ const StudentDashboard = () => {
                     >
                       Not Eligible
                     </button>
+                  ) : isDeadlinePassed(drive) ? (
+                    <span className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium">
+                      Deadline Passed
+                    </span>
                   ) : (
                     <span className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium">
                       Drive Ended

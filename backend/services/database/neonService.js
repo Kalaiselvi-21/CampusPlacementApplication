@@ -1871,7 +1871,12 @@ class NeonService {
       LEFT JOIN users u ON jd.created_by = u.id
       WHERE jd.is_active = true
       AND jd.drive_date >= CURRENT_DATE
-      AND (jd.deadline IS NULL OR jd.deadline >= CURRENT_DATE)
+      AND (
+        (
+          COALESCE(jd.deadline, jd.drive_date)::timestamp
+          + COALESCE(jd.application_deadline_time, TIME '23:59:59')
+        ) >= CURRENT_TIMESTAMP
+      )
       AND (jd.eligibility_min_cgpa IS NULL OR jd.eligibility_min_cgpa <= $1)
       AND (jd.eligibility_max_backlogs IS NULL OR jd.eligibility_max_backlogs >= $2)
       AND (

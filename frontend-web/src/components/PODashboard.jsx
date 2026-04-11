@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { downloadSignedFile } from "../services/downloadSignedFile";
 import {
   useJobDriveUpdates,
   useDeletionRequestUpdates,
@@ -255,16 +256,9 @@ const PODashboard = () => {
   };
 
   // ✅ ADDED
-  const handleDownloadFile = (fileUrl, fileName) => {
+  const handleDownloadFile = (downloadUrl, fallbackUrl) => {
     try {
-      const link = document.createElement("a");
-      link.href = fileUrl;
-      link.setAttribute("download", fileName);
-      link.setAttribute("target", "_blank");
-      link.setAttribute("rel", "noopener noreferrer");
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
+      downloadSignedFile(downloadUrl, fallbackUrl);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download file");
@@ -1530,7 +1524,7 @@ const PODashboard = () => {
                                 onClick={() =>
                                   handleDownloadFile(
                                     template.download_url || template.file_url,
-                                    template.file_name
+                                    template.file_url
                                   )
                                 }
                                 className="px-3 py-1 text-xs font-medium text-green-700 bg-green-50 rounded hover:bg-green-100 border border-green-200"

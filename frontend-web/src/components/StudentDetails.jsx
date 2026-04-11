@@ -25,6 +25,15 @@ const resolveUploadUrl = (value) => {
   return `${API_BASE.replace(/\/$/, "")}/uploads/${trimmed}`;
 };
 
+const SORT_OPTIONS = [
+  { value: "name", label: "Name" },
+  { value: "rollNumber", label: "Roll Number" },
+  { value: "department", label: "Department" },
+  { value: "cgpa", label: "CGPA" },
+  { value: "placement", label: "Placement Status" },
+  { value: "registeredAt", label: "Registered Date" },
+];
+
 const StudentDetails = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -422,7 +431,7 @@ const StudentDetails = () => {
                     className="ml-2 px-2 py-1 border border-gray-300 rounded text-sm"
                   >
                     {SORT_OPTIONS.map((option) => (
-                      <option key={option.key} value={option.key}>
+                      <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
                     ))}

@@ -23,6 +23,59 @@ const normalizeUser = (user) => {
   };
 };
 
+const mergeUserState = (currentUser, incomingUser) => {
+  if (!currentUser) return normalizeUser(incomingUser);
+  if (!incomingUser) return normalizeUser(currentUser);
+
+  const currentVerification = currentUser.verificationStatus || {};
+  const incomingVerification = incomingUser.verificationStatus || {};
+  const mergedVerification = {
+    ...currentVerification,
+    ...incomingVerification,
+    otpVerified: Boolean(
+      currentVerification.otpVerified || incomingVerification.otpVerified
+    ),
+    isVerified: Boolean(
+      currentVerification.isVerified || incomingVerification.isVerified
+    ),
+  };
+
+  return normalizeUser({
+    ...currentUser,
+    ...incomingUser,
+    isVerified: Boolean(currentUser.isVerified || incomingUser.isVerified),
+    emailVerification: {
+      ...(currentUser.emailVerification || {}),
+      ...(incomingUser.emailVerification || {}),
+      emailVerified: Boolean(
+        currentUser.emailVerification?.emailVerified ||
+          incomingUser.emailVerification?.emailVerified ||
+          currentUser.isVerified ||
+          incomingUser.isVerified
+      ),
+    },
+    approvalVerification: {
+      ...(currentUser.approvalVerification || {}),
+      ...(incomingUser.approvalVerification || {}),
+      isVerified: Boolean(
+        currentUser.approvalVerification?.isVerified ||
+          incomingUser.approvalVerification?.isVerified ||
+          currentVerification.isVerified ||
+          incomingVerification.isVerified
+      ),
+    },
+    profile: {
+      ...(currentUser.profile || {}),
+      ...(incomingUser.profile || {}),
+    },
+    placementPolicyConsent: {
+      ...(currentUser.placementPolicyConsent || {}),
+      ...(incomingUser.placementPolicyConsent || {}),
+    },
+    verificationStatus: mergedVerification,
+  });
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -89,7 +142,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const updateUser = (updatedUser) => {
-    setUser(normalizeUser(updatedUser));
+    setUser((currentUser) => mergeUserState(currentUser, updatedUser));
   };
 
   const checkConsentStatus = async () => {

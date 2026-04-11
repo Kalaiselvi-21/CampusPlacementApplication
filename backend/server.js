@@ -24,6 +24,10 @@ process.env.QUIZ_LAUNCH_MODE = "expo";
 const app = express();
 const server = http.createServer(app);
 
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 const normalizeOrigin = (value) => String(value || "").replace(/\/$/, "");
 const allowedOrigins = Array.from(
   new Set(
@@ -111,12 +115,34 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Rate limiting
-const authLimiter = rateLimit({
+const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30,
+  max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
   message: { message: "Too many attempts, please try again after 15 minutes." },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many registration attempts, please try again after 15 minutes.",
+  },
+});
+
+const resendVerificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message:
+      "Too many verification email requests, please try again after 15 minutes.",
+  },
 });
 
 const uploadLimiter = rateLimit({
@@ -135,7 +161,17 @@ const generalLimiter = rateLimit({
   message: { message: "Too many requests, please slow down." },
 });
 
-app.use("/api/auth", authLimiter);
+const postOnly =
+  (middleware) =>
+  (req, res, next) =>
+    (req.method === "POST" ? middleware(req, res, next) : next());
+
+app.use("/api/auth/login", postOnly(loginLimiter));
+app.use("/api/auth/register", postOnly(registerLimiter));
+app.use(
+  "/api/auth/resend-verification",
+  postOnly(resendVerificationLimiter),
+);
 app.use("/api/users/upload-cgpa", uploadLimiter);
 app.use("/api/profile/upload", uploadLimiter);
 app.use("/api", generalLimiter);

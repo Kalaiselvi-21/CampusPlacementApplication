@@ -173,6 +173,15 @@ function App() {
             />
 
             <Route
+              path="/placement-preparation"
+              element={
+                <ProtectedRoute allowedRoles={["student", "placement_representative"]}>
+                  <PlacementPreparation />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
               path="/otp-verification"
               element={
                 <ProtectedRoute

@@ -60,6 +60,9 @@ const getDriveFileDeadline = async (jobDriveId) => {
 // S3 URL Signing Logic (Copied from templates.js for consistency)
 // ==========================================
 let signS3Url = async (url) => url;
+let signS3UrlForDownload = async (url, _filename) => url;
+
+const isProduction = String(process.env.NODE_ENV || "").toLowerCase() === "production";
 
 const initializeS3 = () => {
   const bucketName = process.env.AWS_BUCKET_NAME || process.env.S3_BUCKET_NAME;
@@ -85,6 +88,21 @@ const initializeS3 = () => {
         return await getSignedUrl(client, command, { expiresIn: 3600 });
       } catch (err) { return fileUrl; }
     };
+
+    signS3UrlForDownload = async (fileUrl, filename) => {
+      if (!fileUrl || !fileUrl.includes("amazonaws.com")) return fileUrl;
+      try {
+        const urlObj = new URL(fileUrl);
+        const key = decodeURIComponent(urlObj.pathname.substring(1));
+        const safeName = encodeURIComponent(filename || "download");
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          ResponseContentDisposition: `attachment; filename="${safeName}"`,
+        });
+        return await getSignedUrl(client, command, { expiresIn: 3600 });
+      } catch (err) { return fileUrl; }
+    };
   } catch (e) {
     try {
       const AWS = require("aws-sdk");
@@ -94,6 +112,20 @@ const initializeS3 = () => {
         try {
           const key = decodeURIComponent(new URL(fileUrl).pathname.substring(1));
           return s3.getSignedUrlPromise("getObject", { Bucket: bucketName, Key: key, Expires: 3600 });
+        } catch (err) { return fileUrl; }
+      };
+
+      signS3UrlForDownload = async (fileUrl, filename) => {
+        if (!fileUrl || !fileUrl.includes("amazonaws.com")) return fileUrl;
+        try {
+          const key = decodeURIComponent(new URL(fileUrl).pathname.substring(1));
+          const safeName = encodeURIComponent(filename || "download");
+          return s3.getSignedUrlPromise("getObject", {
+            Bucket: bucketName,
+            Key: key,
+            Expires: 3600,
+            ResponseContentDisposition: `attachment; filename="${safeName}"`,
+          });
         } catch (err) { return fileUrl; }
       };
     } catch (e) { }
@@ -330,27 +362,68 @@ router.get("/all-summary", auth, ensureTable, async (req, res) => {
       ORDER BY jd.created_at DESC, jd.company_name ASC, ft.file_type ASC
     `;
 
+    console.log("[drive-files/all-summary] Running summary query", {
+      fileType: fileType || "all",
+      submissionStatus: submissionStatus || "all",
+      department: department || "all",
+    });
+
     const result = await neonService.executeRawQuery(query, params);
 
     const matrix = await Promise.all(result.map(async (row) => {
-      if (row.file_url) {
+      if (!row.file_url) {
         return {
           ...row,
-          file_url: await signS3Url(row.file_url)
+          file_name: row.file_name || '-',
+          file_url: null,
+          view_url: null,
+          download_url: null,
         };
       }
-      return {
-        ...row,
-        file_name: row.file_name || '-',
-        file_url: null // Frontend will handle disabled state via null URL
-      };
+
+      try {
+        const viewUrl = await signS3Url(row.file_url);
+        const downloadUrl = await signS3UrlForDownload(row.file_url, row.file_name);
+        return {
+          ...row,
+          file_url: viewUrl,
+          view_url: viewUrl,
+          download_url: downloadUrl,
+        };
+      } catch (signError) {
+        console.error("[drive-files/all-summary] Failed to sign file URL", {
+          driveId: row.drive_id,
+          fileType: row.file_type,
+          fileName: row.file_name,
+          error: signError?.message || signError,
+        });
+        return {
+          ...row,
+          file_url: row.file_url,
+          view_url: row.file_url,
+          download_url: row.file_url,
+        };
+      }
     }));
 
     res.json({ matrix });
 
   } catch (error) {
     console.error("Fetch all drive files summary error:", error);
-    res.status(500).json({ message: "Failed to fetch all drive files summary", error: error.message });
+    const response = {
+      message: "Failed to fetch all drive files summary",
+      error: error.message,
+    };
+
+    if (!isProduction) {
+      response.debug = {
+        route: "/api/drive-files/all-summary",
+        params: req.query,
+        stack: error.stack,
+      };
+    }
+
+    res.status(500).json(response);
   }
 });
 
@@ -375,10 +448,31 @@ router.get("/:driveId", auth, ensureTable, async (req, res) => {
     const rows = await neonService.executeRawQuery(query, [driveId]);
     
     // Sign URLs
-    const files = await Promise.all(rows.map(async (row) => ({
-      ...row,
-      file_url: await signS3Url(row.file_url)
-    })));
+    const files = await Promise.all(rows.map(async (row) => {
+      try {
+        const viewUrl = await signS3Url(row.file_url);
+        const downloadUrl = await signS3UrlForDownload(row.file_url, row.file_name);
+        return {
+          ...row,
+          file_url: viewUrl,
+          view_url: viewUrl,
+          download_url: downloadUrl,
+        };
+      } catch (signError) {
+        console.error("[drive-files/:driveId] Failed to sign file URL", {
+          driveId,
+          fileId: row.id,
+          fileName: row.file_name,
+          error: signError?.message || signError,
+        });
+        return {
+          ...row,
+          file_url: row.file_url,
+          view_url: row.file_url,
+          download_url: row.file_url,
+        };
+      }
+    }));
 
     res.json({ files });
   } catch (error) {

@@ -44,6 +44,23 @@ const cleanupUploadedFile = (file) => {
   }
 };
 
+const ensureCgpaReferencesTable = async () => {
+  await neonService.executeRawQuery(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+  await neonService.executeRawQuery(`
+    CREATE TABLE IF NOT EXISTS cgpa_references (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      roll_number VARCHAR(50) NOT NULL UNIQUE,
+      cgpa NUMERIC(4,2) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await neonService.executeRawQuery(`
+    CREATE INDEX IF NOT EXISTS idx_cgpa_references_roll_number
+    ON cgpa_references(roll_number)
+  `);
+};
+
 const parseCsvFile = (filePath) =>
   new Promise((resolve, reject) => {
     const rows = [];
@@ -227,6 +244,19 @@ router.post(
         });
       }
 
+      const csvHeaders = Object.keys(rows[0] || {});
+      const hasRecognizableHeaders = rows.some(
+        (row) => extractRollNumber(row) !== undefined || extractCgpa(row) !== undefined
+      );
+      if (!hasRecognizableHeaders) {
+        cleanupUploadedFile(req.file);
+        return res.status(400).json({
+          message:
+            "CSV headers not recognized. Expected a roll number column like 'ROLL NO' and a CGPA column like 'CGPA'.",
+          csvHeaders,
+        });
+      }
+
       // Parse and validate all rows first (no DB calls yet)
       const validRows = [];
       let errorCount = 0;
@@ -281,6 +311,7 @@ router.post(
         errorCount += validRows.length - updatePairs.length;
 
         // Bulk upsert cgpa_references using unnest
+        await ensureCgpaReferencesTable();
         await neonService.executeRawQuery(
           `
           INSERT INTO cgpa_references (id, roll_number, cgpa, created_at, updated_at)
@@ -309,7 +340,7 @@ router.post(
         errorCount,
         totalRows: rows.length,
         details: {
-          csvHeaders: Object.keys(rows[0] || {}),
+          csvHeaders,
           sampleData: rows.slice(0, 2),
           note: "Updated CGPA for both students and placement representatives in NeonDB",
         },
@@ -318,6 +349,15 @@ router.post(
     } catch (error) {
       cleanupUploadedFile(req.file);
       console.error("Upload CGPA error:", error);
+      if (
+        /relation ["']?cgpa_references["']? does not exist/i.test(error.message || "")
+      ) {
+        return res.status(500).json({
+          message:
+            "CGPA upload failed because the cgpa_references table is missing. Run the startup migration to align the schema.",
+          error: error.message,
+        });
+      }
       return res
         .status(500)
         .json({ message: "Server error", error: error.message });
@@ -549,6 +589,7 @@ router.post("/update-cgpa-manual", auth, async (req, res) => {
 
     await updateUserCgpa(student.id, newCgpa);
     if (student.roll_number) {
+      await ensureCgpaReferencesTable();
       await upsertCgpaReference(student.roll_number, newCgpa);
     }
 

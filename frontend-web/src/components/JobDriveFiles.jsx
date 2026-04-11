@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
+import { downloadSignedFile } from "../services/downloadSignedFile";
 
 
 const DEPARTMENTS = [
@@ -51,6 +52,7 @@ const JobDriveFiles = () => {
 
     } catch (error) {
       console.error("Error fetching all drive files summary:", error);
+      console.error("Drive files summary response:", error.response?.data);
       toast.error("Failed to load all drive files");
     } finally {
       setAllFilesLoading(false);
@@ -75,16 +77,9 @@ const JobDriveFiles = () => {
     });
   };
 
-  const handleDownloadFile = (fileUrl, fileName) => {
+  const handleDownloadFile = (downloadUrl, fallbackUrl) => {
     try {
-      const link = document.createElement('a');
-      link.href = fileUrl;
-      link.setAttribute('download', fileName);
-      link.setAttribute('target', '_blank');
-      link.setAttribute('rel', 'noopener noreferrer');
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
+      downloadSignedFile(downloadUrl, fallbackUrl);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download file");
@@ -199,10 +194,10 @@ const JobDriveFiles = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {file.file_url ? (
+                      {file.view_url || file.file_url ? (
                         <>
-                          <a href={file.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-900 mr-2">View</a>
-                          <button onClick={() => handleDownloadFile(file.file_url, file.file_name)} className="text-green-600 hover:text-green-900">Download</button>
+                          <a href={file.view_url || file.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-900 mr-2">View</a>
+                          <button onClick={() => handleDownloadFile(file.download_url, file.view_url || file.file_url)} className="text-green-600 hover:text-green-900">Download</button>
                         </>
                       ) : (
                         <span className="text-gray-400 font-bold">-</span>
