@@ -9,10 +9,14 @@ const logger = require("../services/database/logger");
 const { emitPlacementDataUpdate } = require("../utils/socketUtils");
 const { uploadMulterFileToS3 } = require("../services/storage/s3Upload");
 
-const storage = multer.memoryStorage();
+const os = require("os");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 
 const upload = multer({
-  storage: storage,
+  storage,
   fileFilter: (req, file, cb) => {
     const allowedTypes = /csv|pdf/;
     const extname = allowedTypes.test(
@@ -28,6 +32,12 @@ const upload = multer({
   },
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+
+const cleanupTempUploadedFile = (file) => {
+  if (file?.path) {
+    fs.unlink(file.path, () => {});
+  }
+};
 
 const saveAnalyticsToNeon = async ({ batch, userId, placementData, statistics, fileName, filePath }) => {
   let analyticsId;
@@ -604,7 +614,14 @@ router.post("/upload", auth, upload.single("file"), async (req, res) => {
     const fileExt = path.extname(req.file.originalname).toLowerCase();
 
     if (fileExt === ".csv") {
-      placementData = await parseCSV(req.file.buffer);
+      // Using diskStorage, so parse from temp file path (buffer is not populated).
+      placementData = await parseCSV(req.file.path);
+      if (!Array.isArray(placementData) || placementData.length === 0) {
+        return res.status(400).json({
+          message:
+            "CSV uploaded but no placement rows could be parsed. Please verify the CSV headers/content format.",
+        });
+      }
     } else if (fileExt === ".pdf") {
       placementData = [];
     }
@@ -657,6 +674,8 @@ router.post("/upload", auth, upload.single("file"), async (req, res) => {
     console.error("Upload error:", error);
     logger.logFailure('SYSTEM', 'UPDATE', 'PlacementAnalytics', error.message);
     res.status(500).json({ message: "Error processing file", error: error.message });
+  } finally {
+    cleanupTempUploadedFile(req.file);
   }
 });
 

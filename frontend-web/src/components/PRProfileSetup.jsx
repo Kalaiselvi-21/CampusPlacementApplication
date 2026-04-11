@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import axios from "axios";
-import toast from "react-hot-toast";
-const API_BASE = process.env.REACT_APP_API_BASE;
+import { API_BASE } from '../config/api';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import axios from 'axios';
+import toast from 'react-hot-toast';
+
 
 const PRProfileSetup = () => {
   const { user, updateUser } = useAuth();

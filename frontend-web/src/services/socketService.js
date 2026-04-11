@@ -1,4 +1,5 @@
 import { io } from "socket.io-client";
+import { SERVER_URL } from "../config/api";
 
 class SocketService {
   constructor() {
@@ -43,8 +44,7 @@ class SocketService {
     const nextPayload = this.normalizeJoinPayload(userOrRole);
     this.mergeJoinPayload(nextPayload);
 
-    const serverUrl =
-      process.env.REACT_APP_SERVER_URL || process.env.REACT_APP_API_BASE || "http://localhost:5000";
+    const serverUrl = SERVER_URL;
 
     // If already connected to same server, just refresh room membership.
     if (this.socket && this.serverUrl === serverUrl) {

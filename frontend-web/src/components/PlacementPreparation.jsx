@@ -1,9 +1,9 @@
+import { API_BASE } from '../config/api';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocketConnection, useSocketEvent } from '../hooks/useSocket';
 import NotificationToast from './NotificationToast';
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 export default function PlacementPreparation() {
   const { user } = useAuth();
@@ -506,7 +506,7 @@ export default function PlacementPreparation() {
                     <div className="flex items-center space-x-4 text-sm text-gray-600">
                       <span>⏱️ {t.durationMins} mins</span>
                       <span>📅 Completed recently</span>
-                      <span>📊 Score: {t.score || 'N/A'}</span>
+                      <span>📊 Score: {t.score != null ? `${t.score}${t.total != null ? ` / ${t.total}` : ''}` : 'N/A'}</span>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">

@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import axios from "axios";
@@ -21,7 +22,6 @@ import {
   usePlacementDataUpdates,
 } from "../hooks/useSocket";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 // Function to abbreviate department names
 const abbreviateDepartment = (department) => {

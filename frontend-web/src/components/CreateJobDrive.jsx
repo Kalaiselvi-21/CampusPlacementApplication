@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,8 +27,7 @@ const isPR = (role) => {
 };
 
 const CreateJobDrive = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user } = useAuth();
+    const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [locationInput, setLocationInput] = useState('');

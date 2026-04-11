@@ -1,17 +1,19 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import axios from "axios";
 import toast from "react-hot-toast";
 import CarouselBanner from "./CarouselBanner";
+import { downloadSignedFile } from "../services/downloadSignedFile";
 
 const PRDashboard = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user } = useAuth();
+    const { user } = useAuth();
   const navigate = useNavigate();
   const [allDrives, setAllDrives] = useState([]);
   const [eligibleDrives, setEligibleDrives] = useState([]);
   const [departmentApplications, setDepartmentApplications] = useState(0);
+  const [myTestsCount, setMyTestsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -21,6 +23,7 @@ const PRDashboard = () => {
   const [boxFileBatch, setBoxFileBatch] = useState("");
   const [existingBoxFile, setExistingBoxFile] = useState(null);
   const [boxFileUploadLoading, setBoxFileUploadLoading] = useState(false);
+  const [boxFileMetadataLoading, setBoxFileMetadataLoading] = useState(false);
   const [boxFileReplaceMode, setBoxFileReplaceMode] = useState(false);
   const [boxFileDeletedNotice, setBoxFileDeletedNotice] = useState(false);
 
@@ -69,21 +72,11 @@ const PRDashboard = () => {
   };
 
   // ✅ ADDED
-  const handleDownloadFile = async (fileUrl, fileName) => {
+  const handleDownloadFile = (downloadUrl, fallbackUrl) => {
     try {
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadSignedFile(downloadUrl, fallbackUrl);
     } catch (error) {
-      console.error("Download error:", error);
-      toast.error("Failed to download file");
+      toast.error("No download link available");
     }
   };
 
@@ -204,19 +197,88 @@ const PRDashboard = () => {
     } catch (error) {
       const backendMessage = error.response?.data?.message || "Upload failed";
 
-      if (error.response?.status === 404 || /file record not found/i.test(backendMessage)) {
+      if (
+        error.response?.status === 404 ||
+        error.response?.status === 409 ||
+        /file record not found/i.test(backendMessage) ||
+        /stale/i.test(backendMessage)
+      ) {
         // The row was removed (typically by PO delete). Reset stale client state and allow fresh upload.
         setExistingBoxFile(null);
         setBoxFileReplaceMode(false);
         setBoxFileDeletedNotice(true);
         await fetchBoxFileStatus();
-        toast.error("Your previous box file was deleted by PO. Please upload again.", { id: toastId });
+        toast.error("Your box file record changed or was deleted. Please refresh and try again.", { id: toastId });
       } else {
         toast.error(backendMessage, { id: toastId });
       }
     } finally {
       setBoxFileUploadLoading(false);
       event.target.value = "";
+    }
+  };
+
+  const handleBatchMetadataUpdate = async () => {
+    const fileId = existingBoxFile?.id || existingBoxFile?._id || existingBoxFile?.file_id;
+    if (!fileId) {
+      toast.error("No existing box file found to update");
+      return;
+    }
+
+    const batchRegex = /^\d{4}-\d{4}$/;
+    if (!batchRegex.test(boxFileBatch)) {
+      toast.error("Please enter batch in YYYY-YYYY format (e.g., 2023-2027)");
+      return;
+    }
+
+    const currentBatch = formatBatch(
+      existingBoxFile?.batch || existingBoxFile?.batch_name || ""
+    );
+    if (String(currentBatch || "").trim() === String(boxFileBatch || "").trim()) {
+      toast("Batch is already up to date");
+      return;
+    }
+
+    setBoxFileMetadataLoading(true);
+    const toastId = toast.loading("Updating batch...");
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.patch(
+        `${API_BASE}/api/box-files/${fileId}`,
+        { batch: boxFileBatch },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      setExistingBoxFile(response.data?.file || null);
+      setBoxFileBatch(
+        formatBatch(response.data?.file?.batch || response.data?.file?.batch_name || boxFileBatch)
+      );
+      setBoxFileDeletedNotice(false);
+      toast.success(response.data?.message || "Batch updated successfully", { id: toastId });
+    } catch (error) {
+      const backendMessage = error.response?.data?.message || "Failed to update batch";
+
+      if (
+        error.response?.status === 404 ||
+        error.response?.status === 409 ||
+        /deleted/i.test(backendMessage) ||
+        /stale/i.test(backendMessage)
+      ) {
+        setExistingBoxFile(null);
+        setBoxFileReplaceMode(false);
+        setBoxFileDeletedNotice(true);
+        await fetchBoxFileStatus();
+      }
+
+      toast.error(backendMessage, { id: toastId });
+    } finally {
+      setBoxFileMetadataLoading(false);
     }
   };
 
@@ -478,6 +540,16 @@ const PRDashboard = () => {
       });
 
       setDepartmentApplications(departmentDrives.length);
+
+      // Fetch PR's own tests count
+      try {
+        const testsResponse = await axios.get(`${API_BASE}/api/prep/tests/mine`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setMyTestsCount((testsResponse.data.tests || []).length);
+      } catch {
+        setMyTestsCount(0);
+      }
     } catch (error) {
       console.error("Error fetching data:", error);
       if (error.response?.status === 401) {
@@ -544,7 +616,7 @@ const PRDashboard = () => {
         </div>
 
         {/* Stats Cards - Fix the calculations */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <div className="bg-white p-6 rounded-lg shadow">
             <h3 className="text-lg font-semibold text-gray-900">
               All Available Drives
@@ -583,6 +655,20 @@ const PRDashboard = () => {
               Currently ongoing drives
             </p>
           </div>
+          <div
+            className="bg-white p-6 rounded-lg shadow cursor-pointer hover:shadow-md transition"
+            onClick={() => navigate("/placement-preparation")}
+          >
+            <h3 className="text-lg font-semibold text-gray-900">
+              My Tests
+            </h3>
+            <p className="text-3xl font-bold text-indigo-600">
+              {myTestsCount}
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              Manage &amp; view past tests
+            </p>
+          </div>
         </div>
 
         {/* ✅ ADDED: Box File Upload Section */}
@@ -608,7 +694,7 @@ const PRDashboard = () => {
                     onChange={(e) => setBoxFileBatch(e.target.value)}
                     placeholder="YYYY-YYYY (e.g., 2023-2027)"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    disabled={existingBoxFile && !boxFileReplaceMode}
+                    disabled={boxFileUploadLoading || boxFileMetadataLoading}
                   />
                 </div>
                 <div>
@@ -666,6 +752,13 @@ const PRDashboard = () => {
                     >
                       View File
                     </a>
+                    <button
+                      onClick={handleBatchMetadataUpdate}
+                      disabled={boxFileMetadataLoading}
+                      className="px-4 py-2 bg-white text-indigo-700 border border-indigo-200 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors disabled:opacity-60"
+                    >
+                      {boxFileMetadataLoading ? "Updating..." : "Update Batch"}
+                    </button>
                     <button
                       onClick={() => setBoxFileReplaceMode(true)}
                       className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
@@ -878,7 +971,7 @@ const PRDashboard = () => {
                                   View
                                 </a>
                                 <button
-                                  onClick={() => handleDownloadFile(template.file_url, template.file_name)}
+                                  onClick={() => handleDownloadFile(template.download_url, template.file_url)}
                                   className="flex-1 bg-teal-600 text-white text-center py-2 px-4 rounded text-sm hover:bg-teal-700 transition-colors"
                                 >
                                   Download

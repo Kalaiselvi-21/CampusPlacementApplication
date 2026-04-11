@@ -11,8 +11,9 @@ backend/uploads/
 # Local env variants
 .env.*
 *.env
-.env
-
-.env
-backend/.env
+.envbackend/.env
 frontend-web/.env
+
+.claude
+.cursor
+env_backup

@@ -29,9 +29,21 @@ CREATE TABLE IF NOT EXISTS verification_status (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Create cgpa_references table if it doesn't exist
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE IF NOT EXISTS cgpa_references (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    roll_number VARCHAR(50) NOT NULL UNIQUE,
+    cgpa NUMERIC(4,2) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_placement_consents_user_id ON placement_consents(user_id);
 CREATE INDEX IF NOT EXISTS idx_verification_status_user_id ON verification_status(user_id);
+CREATE INDEX IF NOT EXISTS idx_cgpa_references_roll_number ON cgpa_references(roll_number);
 
 -- Now update the view
 DROP VIEW IF EXISTS v_users_complete CASCADE;

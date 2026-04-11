@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
-const API_BASE = process.env.REACT_APP_API_BASE;
+import { API_BASE } from '../config/api';
 
 const Register = () => {
   const navigate = useNavigate();

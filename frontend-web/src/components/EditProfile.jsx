@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -5,8 +6,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 const EditProfile = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user, updateUser, logout } = useAuth();
+    const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -171,9 +171,9 @@ const EditProfile = () => {
   };
 
   const submitBasicInfo = async () => {
-    // Only require CGPA validation on frontend if the user is a PO
-    if (isPO && !basicInfo.cgpa && basicInfo.cgpa !== 0) {
-      toast.error("CGPA is required");
+    // PO profile is intentionally minimal — only name and phone required.
+    if (isPO && (!basicInfo.name || !basicInfo.phoneNumber)) {
+      toast.error("Name and phone number are required");
       return;
     }
 
@@ -210,14 +210,21 @@ const EditProfile = () => {
       const updatedUser = {
         ...user,
         ...(responseUser || {}),
+        profile: { ...user.profile, ...(responseUser?.profile || {}) },
         placementPolicyConsent:
           responseUser?.placementPolicyConsent || user.placementPolicyConsent,
+        verificationStatus:
+          responseUser?.verificationStatus || user.verificationStatus,
       };
       updateUser(updatedUser);
       toast.success("Basic information saved!");
       setValidationErrors([]);
-      // Move to step 2 instead of navigating away
-      setCurrentStep(2);
+      if (isPO) {
+        navigate("/po-dashboard");
+      } else {
+        // Move to step 2 for student/PR profile completion flow.
+        setCurrentStep(2);
+      }
     } catch (error) {
       console.log("Error response:", error.response?.data);
 
@@ -297,8 +304,11 @@ const EditProfile = () => {
       const updatedUser = {
         ...user,
         ...(responseUser || {}),
+        profile: { ...user.profile, ...(responseUser?.profile || {}) },
         placementPolicyConsent:
           responseUser?.placementPolicyConsent || user.placementPolicyConsent,
+        verificationStatus:
+          responseUser?.verificationStatus || user.verificationStatus,
       };
       updateUser(updatedUser);
 
@@ -381,9 +391,187 @@ const EditProfile = () => {
     }
   };
 
-  // Copy the render methods from CompleteProfile
-  const renderBasicInfoStep = () => (
+  // PO-only form: name, phone, department
+  const renderPOBasicInfoStep = () => (
     <div className="space-y-4">
+      <h3 className="text-lg font-semibold mb-4">Basic Information</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Name *</label>
+          <input
+            type="text"
+            name="name"
+            value={basicInfo.name}
+            onChange={handleBasicInfoChange}
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Phone Number *</label>
+          <input
+            type="tel"
+            name="phoneNumber"
+            value={basicInfo.phoneNumber}
+            onChange={handleBasicInfoChange}
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Department</label>
+          <select
+            name="department"
+            value={basicInfo.department}
+            onChange={handleBasicInfoChange}
+            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+          >
+            <option value="">Select Department</option>
+            {departments.map((dept) => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {validationErrors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-3">
+          <p className="text-red-700 text-sm font-medium">Please fix the following:</p>
+          <ul className="text-red-600 text-sm list-disc list-inside mt-1">
+            {validationErrors.map((err, i) => <li key={i}>{err}</li>)}
+          </ul>
+        </div>
+      )}
+
+      <button
+        onClick={submitBasicInfo}
+        disabled={loading}
+        className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 mt-4"
+      >
+        {loading ? "Saving..." : "Save & Continue"}
+      </button>
+    </div>
+  );
+
+  // PO-only file upload: profile photo only
+  const renderPOFileUploadStep = () => (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold mb-4">Profile Photo</h3>
+      <div>
+        <label className="block text-sm font-medium text-gray-700">
+          Profile Photo * (JPEG/JPG/PNG)
+        </label>
+        <input
+          type="file"
+          name="photo"
+          onChange={handleFileChange}
+          accept="image/jpeg, image/jpg, image/png"
+          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+        />
+        {(basicInfo.photo || user?.profile?.photo) && (
+          <div className="text-sm text-green-600 mt-1">
+            Current:{" "}
+            <a href={basicInfo.photo || user.profile.photo} target="_blank" rel="noreferrer" className="underline">
+              View Photo
+            </a>
+          </div>
+        )}
+      </div>
+      <button
+        onClick={submitFiles}
+        disabled={loading}
+        className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 mt-4"
+      >
+        {loading ? "Uploading..." : "Save Profile"}
+      </button>
+    </div>
+  );
+
+  // Copy the render methods from CompleteProfile
+  const renderBasicInfoStep = () => {
+    if (isPO) {
+      return (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold mb-4">Officer Profile</h3>
+          <p className="text-sm text-gray-600">
+            Only key contact details are required for Placement Officers.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Name *
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={basicInfo.name}
+                onChange={handleBasicInfoChange}
+                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Phone Number *
+              </label>
+              <input
+                type="tel"
+                name="phoneNumber"
+                value={basicInfo.phoneNumber}
+                onChange={handleBasicInfoChange}
+                placeholder="10-digit mobile number"
+                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Department
+              </label>
+              <input
+                type="text"
+                value={basicInfo.department || "N/A"}
+                disabled
+                className="mt-1 block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-gray-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                College Email
+              </label>
+              <input
+                type="email"
+                value={basicInfo.collegeEmail || user?.email || "N/A"}
+                disabled
+                className="mt-1 block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-gray-500"
+              />
+            </div>
+          </div>
+
+          {validationErrors?.length > 0 && (
+            <div className="p-3 bg-red-100 border border-red-600 text-red-600 rounded text-sm">
+              Invalid fields: {validationErrors?.join(", ")}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              onClick={submitBasicInfo}
+              disabled={loading}
+              className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {loading ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
       <h3 className="text-lg font-semibold mb-4">Basic Information</h3>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -865,6 +1053,7 @@ const EditProfile = () => {
       </div>
     </div>
   );
+  };
 
   const renderFileUploadStep = () => (
     <div className="space-y-4">
@@ -1056,36 +1245,38 @@ const EditProfile = () => {
           </div>
 
           <div className="px-6 py-4">
-            <div className="mb-6">
-              <div className="flex items-center">
-                <div
-                  className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                    currentStep >= 1 ? "bg-blue-600 text-white" : "bg-gray-300"
-                  }`}
-                >
-                  1
+            {!isPO && (
+              <div className="mb-6">
+                <div className="flex items-center">
+                  <div
+                    className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                      currentStep >= 1 ? "bg-blue-600 text-white" : "bg-gray-300"
+                    }`}
+                  >
+                    1
+                  </div>
+                  <div
+                    className={`flex-1 h-1 mx-4 ${
+                      currentStep >= 2 ? "bg-blue-600" : "bg-gray-300"
+                    }`}
+                  ></div>
+                  <div
+                    className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                      currentStep >= 2 ? "bg-blue-600 text-white" : "bg-gray-300"
+                    }`}
+                  >
+                    2
+                  </div>
                 </div>
-                <div
-                  className={`flex-1 h-1 mx-4 ${
-                    currentStep >= 2 ? "bg-blue-600" : "bg-gray-300"
-                  }`}
-                ></div>
-                <div
-                  className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                    currentStep >= 2 ? "bg-blue-600 text-white" : "bg-gray-300"
-                  }`}
-                >
-                  2
+                <div className="flex justify-between mt-2 text-sm text-gray-600">
+                  <span>Basic Information</span>
+                  <span>Document Upload</span>
                 </div>
               </div>
-              <div className="flex justify-between mt-2 text-sm text-gray-600">
-                <span>Basic Information</span>
-                <span>Document Upload</span>
-              </div>
-            </div>
+            )}
 
-            {currentStep === 1 && renderBasicInfoStep()}
-            {currentStep === 2 && renderFileUploadStep()}
+            {currentStep === 1 && (isPO ? renderPOBasicInfoStep() : renderBasicInfoStep())}
+            {currentStep === 2 && (isPO ? renderPOFileUploadStep() : renderFileUploadStep())}
 
             {/* Danger Zone for Account Deletion */}
             <div className="mt-10 pt-6 border-t border-gray-200">

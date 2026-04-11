@@ -24,10 +24,14 @@ const isStudentOrPR = (user) => {
   );
 };
 
-const storage = multer.memoryStorage();
+const os = require('os');
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 
 const upload = multer({
-  storage: storage,
+  storage,
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: function (req, file, cb) {
     const allowedTypes = /jpeg|jpg|png|pdf/;

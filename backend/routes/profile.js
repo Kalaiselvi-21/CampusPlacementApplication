@@ -21,36 +21,71 @@ const normalizePgArray = (val) => {
   return [];
 };
 
-// Helper function to check if profile is complete
-const checkProfileCompletion = (profileRow) => {
-  const up = profileRow || {};
-  const requiredFields = [
-    { key: "profile_name" },
-    { key: "gender" },
-    { key: "degree" },
-    { key: "date_of_birth" },
-    { key: "personal_email" },
-    { key: "college_email" },
-    { key: "tenth_percentage" },
-    { key: "phone_number" },
-    { key: "linkedin_url" },
-    { key: "department" },
-    { key: "graduation_year" },
-    { key: "address" },
-    { key: "about_me" },
-    { key: "resume_drive_link" },
-    { key: "pan_card_drive_link" },
-    { key: "aadhar_card_drive_link" },
-    { key: "photo" },
-    { key: "resume" },
-  ];
+const getRequiredProfileFields = (role) => {
+  const normalizedRole = String(role || "").toLowerCase().replace(/\s+/g, "_");
 
+  if (normalizedRole === "placement_representative" || normalizedRole === "pr") {
+    return [
+      { key: "profile_name", label: "Full Name" },
+      { key: "phone_number", label: "Phone Number" },
+      { key: "department", label: "Department" },
+      { key: "photo", label: "Profile Photo" },
+    ];
+  }
+
+  if (
+    normalizedRole === "placement_officer" ||
+    normalizedRole === "po" ||
+    normalizedRole === "admin"
+  ) {
+    return [{ key: "profile_name", label: "Full Name" }];
+  }
+
+  return [
+    { key: "profile_name", label: "Full Name" },
+    { key: "gender", label: "Gender" },
+    { key: "degree", label: "Degree" },
+    { key: "date_of_birth", label: "Date of Birth" },
+    { key: "personal_email", label: "Personal Email" },
+    { key: "college_email", label: "College Email" },
+    { key: "tenth_percentage", label: "10th Percentage" },
+    { key: "phone_number", label: "Phone Number" },
+    { key: "linkedin_url", label: "LinkedIn URL" },
+    { key: "department", label: "Department" },
+    { key: "graduation_year", label: "Graduation Year" },
+    { key: "address", label: "Address" },
+    { key: "about_me", label: "About Me" },
+    { key: "resume_drive_link", label: "Resume Drive Link" },
+    { key: "pan_card_drive_link", label: "PAN Card Drive Link" },
+    { key: "aadhar_card_drive_link", label: "Aadhar Card Drive Link" },
+    { key: "photo", label: "Profile Photo" },
+    { key: "resume", label: "Resume" },
+  ];
+};
+
+const getProfileCompletionState = (profileRow, role) => {
+  const up = profileRow || {};
+  const requiredFields = getRequiredProfileFields(role);
   const missingFields = requiredFields.filter(
-    (f) => !up[f.key] || (Array.isArray(up[f.key]) && up[f.key].length === 0),
+    (field) =>
+      !up[field.key] ||
+      (Array.isArray(up[field.key]) && up[field.key].length === 0),
   );
 
-  return missingFields.length === 0;
+  const total = requiredFields.length;
+  const percentage =
+    total === 0 ? 100 : Math.round(((total - missingFields.length) / total) * 100);
+
+  return {
+    isComplete: missingFields.length === 0,
+    percentage,
+    missingFields: missingFields.map((field) => field.label),
+  };
 };
+
+// Helper function to check if profile is complete — role-aware.
+const checkProfileCompletion = (profileRow, role) =>
+  getProfileCompletionState(profileRow, role).isComplete;
 
 const normalizePlacementStatus = (value) => {
   if (!value) return value;
@@ -73,7 +108,11 @@ const resolveNeonUser = async (reqUser) => {
   return user;
 };
 
-const storage = multer.memoryStorage();
+const os = require("os");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 
 const upload = multer({
   storage,
@@ -186,43 +225,12 @@ router.get("/completion-status", auth, async (req, res) => {
     );
     const up = profileRows[0] || {};
 
-    const requiredFields = [
-      { key: "profile_name", label: "Full Name" },
-      { key: "gender", label: "Gender" },
-      { key: "degree", label: "Degree" },
-      { key: "date_of_birth", label: "Date of Birth" },
-      { key: "personal_email", label: "Personal Email" },
-      { key: "college_email", label: "College Email" },
-      { key: "tenth_percentage", label: "10th Percentage" },
-      { key: "phone_number", label: "Phone Number" },
-      { key: "linkedin_url", label: "LinkedIn URL" },
-      { key: "department", label: "Department" },
-      { key: "graduation_year", label: "Graduation Year" },
-      { key: "address", label: "Address" },
-      { key: "about_me", label: "About Me" },
-      { key: "resume_drive_link", label: "Resume Drive Link" },
-      { key: "pan_card_drive_link", label: "PAN Card Drive Link" },
-      { key: "aadhar_card_drive_link", label: "Aadhar Card Drive Link" },
-      { key: "photo", label: "Profile Photo" },
-      { key: "resume", label: "Resume" },
-    ];
-
-    const missingFields = requiredFields
-      .filter(
-        (f) =>
-          !up[f.key] || (Array.isArray(up[f.key]) && up[f.key].length === 0),
-      )
-      .map((f) => f.label);
-
-    const total = requiredFields.length;
-    const percentage = Math.round(
-      ((total - missingFields.length) / total) * 100,
-    );
+    const completionState = getProfileCompletionState(up, user.role);
 
     return res.json({
-      percentage: percentage,
-      isComplete: percentage === 100,
-      missingFields: missingFields,
+      percentage: completionState.percentage,
+      isComplete: completionState.isComplete,
+      missingFields: completionState.missingFields,
       database: "NEON",
     });
   } catch (error) {
@@ -324,23 +332,30 @@ router.put("/basic-info", auth, async (req, res) => {
       }
     }
 
+    const normalizedRole = String(user.role || "").toLowerCase().replace(/\s+/g, "_");
+    const isPRRole =
+      normalizedRole === "placement_representative" || normalizedRole === "pr";
+    const isStudentRole = normalizedRole === "student";
+
     // Required Fields Validation
-    const requiredFields = [
-      "name",
-      "gender",
-      "degree",
-      "dateOfBirth",
-      "personalEmail",
-      "collegeEmail",
-      "tenthPercentage",
-      "phoneNumber",
-      "linkedinUrl",
-      "department",
-      "address",
-      "resumeDriveLink",
-      "panCardDriveLink",
-      "aadharCardDriveLink",
-    ];
+    const requiredFields = isPRRole
+      ? ["name", "phoneNumber", "department"]
+      : [
+          "name",
+          "gender",
+          "degree",
+          "dateOfBirth",
+          "personalEmail",
+          "collegeEmail",
+          "tenthPercentage",
+          "phoneNumber",
+          "linkedinUrl",
+          "department",
+          "address",
+          "resumeDriveLink",
+          "panCardDriveLink",
+          "aadharCardDriveLink",
+        ];
 
     requiredFields.forEach((field) => {
       if (!body[field] || String(body[field]).trim() === "") {
@@ -348,23 +363,25 @@ router.put("/basic-info", auth, async (req, res) => {
       }
     });
 
-    // Validate Graduation Year / Batch Alias
-    const gradYear = body.graduationYear || body.batch;
-    if (!gradYear || String(gradYear).trim() === "") {
-      validationErrors.push("graduationYear");
-    }
+    if (isStudentRole) {
+      // Validate Graduation Year / Batch Alias
+      const gradYear = body.graduationYear || body.batch;
+      if (!gradYear || String(gradYear).trim() === "") {
+        validationErrors.push("graduationYear");
+      }
 
-    // About Me Length
-    if (!body.aboutMe || body.aboutMe.trim() === "") {
-      validationErrors.push("aboutMe");
-    } else if (body.aboutMe.trim().length < 50) {
-      validationErrors.push("aboutMe_tooShort");
-    } else if (body.aboutMe.trim().length > 500) {
-      validationErrors.push("aboutMe_tooLong");
-    }
+      // About Me Length
+      if (!body.aboutMe || body.aboutMe.trim() === "") {
+        validationErrors.push("aboutMe");
+      } else if (body.aboutMe.trim().length < 50) {
+        validationErrors.push("aboutMe_tooShort");
+      } else if (body.aboutMe.trim().length > 500) {
+        validationErrors.push("aboutMe_tooLong");
+      }
 
-    // Skills count
-    if (!body.skills || body.skills.length < 3) validationErrors.push("skills");
+      // Skills count
+      if (!body.skills || body.skills.length < 3) validationErrors.push("skills");
+    }
 
     // Roll Number Sync & Uniqueness (NeonDB implementation)
     if (body.rollNumber) {
@@ -392,7 +409,7 @@ router.put("/basic-info", auth, async (req, res) => {
       );
       if (existingRoll.length > 0)
         validationErrors.push("rollNumber already exists");
-    } else {
+    } else if (isStudentRole) {
       // If not in body, check if it exists in DB
       const [checkRoll] = await sequelize.query(
         "SELECT roll_number FROM user_profiles WHERE user_id = $1",
@@ -539,8 +556,31 @@ router.put("/basic-info", auth, async (req, res) => {
       `SELECT * FROM user_profiles WHERE user_id = $1 LIMIT 1`,
       { bind: [req.user.id] },
     );
-    const fup = finalRows[0] || {};
+    let fup = finalRows[0] || {};
     const finalUser = await resolveNeonUser(req.user);
+    const completionState = getProfileCompletionState(fup, finalUser.role);
+
+    if (
+      fup.is_profile_complete !== completionState.isComplete ||
+      Number(fup.profile_completion_percentage || 0) !== completionState.percentage
+    ) {
+      await sequelize.query(
+        `UPDATE user_profiles
+         SET is_profile_complete = $1,
+             profile_completion_percentage = $2,
+             updated_at = NOW()
+         WHERE user_id = $3`,
+        {
+          bind: [completionState.isComplete, completionState.percentage, req.user.id],
+        },
+      );
+
+      fup = {
+        ...fup,
+        is_profile_complete: completionState.isComplete,
+        profile_completion_percentage: completionState.percentage,
+      };
+    }
 
     const finalProfile = {
       name: fup.profile_name || null,
@@ -573,7 +613,8 @@ router.put("/basic-info", auth, async (req, res) => {
       aboutMe: fup.about_me || null,
       skills: fup.skills || [],
       placementStatus: fup.placement_status || null,
-      isProfileComplete: fup.is_profile_complete || false,
+      isProfileComplete: completionState.isComplete,
+      profileCompletionPercentage: completionState.percentage,
     };
 
     const io = req.app.get("io");
@@ -591,7 +632,17 @@ router.put("/basic-info", auth, async (req, res) => {
         id: finalUser.id,
         email: finalUser.email,
         role: finalUser.role,
+        isVerified: finalUser.isVerified,
+        emailVerification: {
+          emailVerified: finalUser.isVerified || false,
+        },
+        approvalVerification: {
+          isVerified: finalUser.verificationStatus?.isVerified || false,
+        },
         profile: finalProfile,
+        isProfileComplete: completionState.isComplete,
+        placementPolicyConsent: finalUser.placementPolicyConsent || {},
+        verificationStatus: finalUser.verificationStatus || {},
       },
       database: "NEON",
     });
@@ -701,7 +752,7 @@ router.post("/upload-files", auth, (req, res) => {
           : currentProfile.marksheets,
       };
 
-      const isProfileNowComplete = checkProfileCompletion(profileWithNewFiles);
+      const isProfileNowComplete = currentProfile.is_profile_complete ? true : checkProfileCompletion(profileWithNewFiles, req.user.role);
 
       await sequelize.query(
         `UPDATE user_profiles
@@ -744,6 +795,9 @@ router.post("/upload-files", auth, (req, res) => {
           email: updatedUser.email,
           role: updatedUser.role,
           profile: updatedUser.profile || {},
+          isProfileComplete: updatedUser.profile?.isProfileComplete || false,
+          placementPolicyConsent: updatedUser.placementPolicyConsent || {},
+          verificationStatus: updatedUser.verificationStatus || {},
         },
         database: "NEON",
       });

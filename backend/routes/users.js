@@ -2,13 +2,20 @@ const express = require("express");
 const multer = require("multer");
 const csv = require("csv-parser");
 const fs = require("fs");
+const os = require("os");
 const { auth } = require("../middleware/auth");
 const neonService = require("../services/database/neonService");
 const logger = require("../services/database/logger");
 const { emitCGPAUpdate } = require("../utils/socketUtils");
 
 const router = express.Router();
-const upload = multer({ dest: "uploads/" });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) =>
+      cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+  }),
+});
 
 const normalizeRole = (role) =>
   String(role || "")
@@ -32,9 +39,26 @@ const isPrivilegedCgpaUser = (req) =>
 const isLakshmiDebugUser = (req) => req.user.email === "lakshmiysc@gmail.com";
 
 const cleanupUploadedFile = (file) => {
-  if (file && file.path && fs.existsSync(file.path)) {
-    fs.unlinkSync(file.path);
+  if (file && file.path) {
+    fs.unlink(file.path, () => {});
   }
+};
+
+const ensureCgpaReferencesTable = async () => {
+  await neonService.executeRawQuery(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+  await neonService.executeRawQuery(`
+    CREATE TABLE IF NOT EXISTS cgpa_references (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      roll_number VARCHAR(50) NOT NULL UNIQUE,
+      cgpa NUMERIC(4,2) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await neonService.executeRawQuery(`
+    CREATE INDEX IF NOT EXISTS idx_cgpa_references_roll_number
+    ON cgpa_references(roll_number)
+  `);
 };
 
 const parseCsvFile = (filePath) =>
@@ -220,36 +244,83 @@ router.post(
         });
       }
 
-      let updatedCount = 0;
+      const csvHeaders = Object.keys(rows[0] || {});
+      const hasRecognizableHeaders = rows.some(
+        (row) => extractRollNumber(row) !== undefined || extractCgpa(row) !== undefined
+      );
+      if (!hasRecognizableHeaders) {
+        cleanupUploadedFile(req.file);
+        return res.status(400).json({
+          message:
+            "CSV headers not recognized. Expected a roll number column like 'ROLL NO' and a CGPA column like 'CGPA'.",
+          csvHeaders,
+        });
+      }
+
+      // Parse and validate all rows first (no DB calls yet)
+      const validRows = [];
       let errorCount = 0;
 
       for (const row of rows) {
         const rawRoll = extractRollNumber(row);
         const rawCgpa = extractCgpa(row);
-
-        if (!rawRoll || !rawCgpa) {
-          errorCount += 1;
-          continue;
-        }
-
-        const cleanRollNo = String(rawRoll).trim();
+        if (!rawRoll || !rawCgpa) { errorCount += 1; continue; }
+        const cleanRollNo = String(rawRoll).trim().toUpperCase();
         const cleanCgpa = parseFloat(rawCgpa);
+        if (Number.isNaN(cleanCgpa)) { errorCount += 1; continue; }
+        validRows.push({ rollNo: cleanRollNo, cgpa: cleanCgpa });
+      }
 
-        if (Number.isNaN(cleanCgpa)) {
-          errorCount += 1;
-          continue;
+      let updatedCount = 0;
+
+      if (validRows.length > 0) {
+        const rollNumbers = validRows.map((r) => r.rollNo);
+
+        // Single query: fetch all matching users by roll number
+        const matchedUsers = await neonService.executeRawQuery(
+          `
+          SELECT u.id, UPPER(COALESCE(up.roll_number, up.register_no, '')) AS roll_key
+          FROM users u
+          LEFT JOIN user_profiles up ON up.user_id = u.id
+          WHERE u.role = ANY($1)
+            AND UPPER(COALESCE(up.roll_number, up.register_no, '')) = ANY($2)
+          `,
+          [["student", "placement_representative"], rollNumbers]
+        );
+
+        const rollToUserId = new Map(matchedUsers.map((u) => [u.roll_key, u.id]));
+
+        // Bulk update user_profiles CGPA using unnest
+        const updatePairs = validRows
+          .filter((r) => rollToUserId.has(r.rollNo))
+          .map((r) => ({ userId: rollToUserId.get(r.rollNo), cgpa: r.cgpa }));
+
+        if (updatePairs.length > 0) {
+          await neonService.executeRawQuery(
+            `
+            UPDATE user_profiles AS up
+            SET cgpa = v.cgpa::numeric, updated_at = NOW()
+            FROM (SELECT unnest($1::uuid[]) AS uid, unnest($2::numeric[]) AS cgpa) AS v
+            WHERE up.user_id = v.uid
+            `,
+            [updatePairs.map((p) => p.userId), updatePairs.map((p) => p.cgpa)]
+          );
+          updatedCount = updatePairs.length;
         }
 
-        const user = await findUserByRollNumber(cleanRollNo);
+        errorCount += validRows.length - updatePairs.length;
 
-        if (user) {
-          await updateUserCgpa(user.id, cleanCgpa);
-          updatedCount += 1;
-        } else {
-          errorCount += 1;
-        }
-
-        await upsertCgpaReference(cleanRollNo, cleanCgpa);
+        // Bulk upsert cgpa_references using unnest
+        await ensureCgpaReferencesTable();
+        await neonService.executeRawQuery(
+          `
+          INSERT INTO cgpa_references (id, roll_number, cgpa, created_at, updated_at)
+          SELECT gen_random_uuid(), v.roll, v.cgpa, NOW(), NOW()
+          FROM (SELECT unnest($1::text[]) AS roll, unnest($2::numeric[]) AS cgpa) AS v
+          ON CONFLICT (roll_number) DO UPDATE SET cgpa = EXCLUDED.cgpa, updated_at = NOW()
+          `,
+          [validRows.map((r) => r.rollNo), validRows.map((r) => r.cgpa)]
+        );
       }
 
       cleanupUploadedFile(req.file);
@@ -269,7 +340,7 @@ router.post(
         errorCount,
         totalRows: rows.length,
         details: {
-          csvHeaders: Object.keys(rows[0] || {}),
+          csvHeaders,
           sampleData: rows.slice(0, 2),
           note: "Updated CGPA for both students and placement representatives in NeonDB",
         },
@@ -278,6 +349,15 @@ router.post(
     } catch (error) {
       cleanupUploadedFile(req.file);
       console.error("Upload CGPA error:", error);
+      if (
+        /relation ["']?cgpa_references["']? does not exist/i.test(error.message || "")
+      ) {
+        return res.status(500).json({
+          message:
+            "CGPA upload failed because the cgpa_references table is missing. Run the startup migration to align the schema.",
+          error: error.message,
+        });
+      }
       return res
         .status(500)
         .json({ message: "Server error", error: error.message });
@@ -509,6 +589,7 @@ router.post("/update-cgpa-manual", auth, async (req, res) => {
 
     await updateUserCgpa(student.id, newCgpa);
     if (student.roll_number) {
+      await ensureCgpaReferencesTable();
       await upsertCgpaReference(student.roll_number, newCgpa);
     }
 

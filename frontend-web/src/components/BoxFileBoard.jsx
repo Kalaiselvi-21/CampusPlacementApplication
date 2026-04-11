@@ -1,10 +1,10 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 const DEPARTMENTS = [
   "Computer Science and Engineering",

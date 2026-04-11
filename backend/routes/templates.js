@@ -10,6 +10,7 @@ const logger = require("../services/database/logger");
 // S3 URL Signing Logic (Async & Robust)
 // ==========================================
 let signS3Url = async (url) => url; // Default: return original URL if signing fails
+let signS3UrlForDownload = async (url, _filename) => url; // Default: return original URL
 
 const initializeS3 = () => {
   const bucketName = process.env.AWS_BUCKET_NAME || process.env.S3_BUCKET_NAME;
@@ -30,13 +31,26 @@ const initializeS3 = () => {
     signS3Url = async (fileUrl) => {
       if (!fileUrl || !fileUrl.includes("amazonaws.com")) return fileUrl;
       try {
-        const urlObj = new URL(fileUrl);
-        // Extract key from pathname (remove leading slash)
-        const key = decodeURIComponent(urlObj.pathname.substring(1));
+        const key = decodeURIComponent(new URL(fileUrl).pathname.substring(1));
         const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
         return await getSignedUrl(client, command, { expiresIn: 3600 });
       } catch (err) { return fileUrl; }
     };
+
+    signS3UrlForDownload = async (fileUrl, filename) => {
+      if (!fileUrl || !fileUrl.includes("amazonaws.com")) return fileUrl;
+      try {
+        const key = decodeURIComponent(new URL(fileUrl).pathname.substring(1));
+        const safeName = encodeURIComponent(filename || 'download');
+        const command = new GetObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          ResponseContentDisposition: `attachment; filename="${safeName}"`,
+        });
+        return await getSignedUrl(client, command, { expiresIn: 3600 });
+      } catch (err) { return fileUrl; }
+    };
+
     return; // Initialized v3 successfully
   } catch (e) {}
 
@@ -44,7 +58,7 @@ const initializeS3 = () => {
   try {
     const AWS = require("aws-sdk");
     const s3 = new AWS.S3({ ...credentials, region, signatureVersion: 'v4' });
-    
+
     signS3Url = async (fileUrl) => {
       if (!fileUrl || !fileUrl.includes("amazonaws.com")) return fileUrl;
       try {
@@ -52,11 +66,29 @@ const initializeS3 = () => {
         return s3.getSignedUrlPromise("getObject", { Bucket: bucketName, Key: key, Expires: 3600 });
       } catch (err) { return fileUrl; }
     };
+
+    signS3UrlForDownload = async (fileUrl, filename) => {
+      if (!fileUrl || !fileUrl.includes("amazonaws.com")) return fileUrl;
+      try {
+        const key = decodeURIComponent(new URL(fileUrl).pathname.substring(1));
+        const safeName = encodeURIComponent(filename || 'download');
+        return s3.getSignedUrlPromise("getObject", {
+          Bucket: bucketName,
+          Key: key,
+          Expires: 3600,
+          ResponseContentDisposition: `attachment; filename="${safeName}"`,
+        });
+      } catch (err) { return fileUrl; }
+    };
   } catch (e) { console.warn("No AWS SDK found. S3 URL signing disabled."); }
 };
 initializeS3();
 
-const storage = multer.memoryStorage();
+const os = require("os");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+});
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit per file
@@ -100,7 +132,8 @@ router.get("/latest", auth, async (req, res) => {
     const processRow = async (row) => {
       if (!row) return null;
       const signedUrl = await signS3Url(row.file_url);
-      return { ...row, file_url: signedUrl };
+      const downloadUrl = await signS3UrlForDownload(row.file_url, row.file_name);
+      return { ...row, file_url: signedUrl, download_url: downloadUrl };
     };
 
     const templates = {

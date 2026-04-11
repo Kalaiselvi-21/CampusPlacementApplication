@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -5,8 +6,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 const EditJobDrive = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user } = useAuth();
+    const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();

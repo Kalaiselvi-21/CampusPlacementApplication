@@ -1,3 +1,4 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import axios from "axios";
@@ -6,8 +7,7 @@ import { useNavigate } from "react-router-dom";
 import CarouselBanner from "./CarouselBanner";
 
 const StudentDashboard = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const { user, updateUser, loading: authLoading } = useAuth();
+    const { user, updateUser, loading: authLoading } = useAuth();
   const [eligibleDrives, setEligibleDrives] = useState([]);
   const [allDrives, setAllDrives] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +108,7 @@ const StudentDashboard = () => {
       setAllDrives(allDrivesData);
 
       // Fetch available tests
+      let availableTestsCount = 0;
       try {
         const testsResponse = await axios.get(
           `${API_BASE}/api/prep/tests/available`,
@@ -117,6 +118,7 @@ const StudentDashboard = () => {
         );
         const tests = testsResponse.data.tests || [];
         setAvailableTests(tests);
+        availableTestsCount = tests.length;
         console.log("Available tests:", tests.length);
       } catch (error) {
         console.error("Error fetching tests:", error);
@@ -148,7 +150,7 @@ const StudentDashboard = () => {
         appliedDrives: applied,
         availableDrives: available,
         allDrives: allDrivesData.length,
-        availableTests: availableTests.length,
+        availableTests: availableTestsCount,
       });
     } catch (error) {
       console.error("=== FETCH ERROR ===");
@@ -321,6 +323,21 @@ const StudentDashboard = () => {
       driveDate.setHours(23, 59, 59, 999);
       return currentDate > driveDate;
     }
+  };
+
+  // Helper function to check if application deadline has passed
+  const isDeadlinePassed = (drive) => {
+    const checkDate = drive.deadline || drive.date;
+    if (!checkDate) return false;
+
+    const deadlineDate = new Date(checkDate);
+    if (drive.applicationDeadlineTime) {
+      const [hours, minutes] = String(drive.applicationDeadlineTime).split(":");
+      deadlineDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+    } else {
+      deadlineDate.setHours(23, 59, 59, 999);
+    }
+    return new Date() > deadlineDate;
   };
 
   // Helper function to check if user is eligible for a drive
@@ -659,7 +676,9 @@ const StudentDashboard = () => {
                     <span className="px-4 py-2 bg-green-100 text-green-800 rounded-lg text-sm font-medium flex items-center">
                       ✓ Applied
                     </span>
-                  ) : !isDriveEnded(drive) && isEligibleForDrive(drive) ? (
+                  ) : !isDriveEnded(drive) &&
+                    !isDeadlinePassed(drive) &&
+                    isEligibleForDrive(drive) ? (
                     <button
                       onClick={() => {
                         handleApply(drive._id);
@@ -680,6 +699,10 @@ const StudentDashboard = () => {
                     >
                       Not Eligible
                     </button>
+                  ) : isDeadlinePassed(drive) ? (
+                    <span className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium">
+                      Deadline Passed
+                    </span>
                   ) : (
                     <span className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium">
                       Drive Ended
@@ -872,10 +895,11 @@ const StudentDashboard = () => {
                 </svg>
               </div>
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Available Tests</p>
+                <p className="text-sm font-medium text-gray-600">Placement Tests</p>
                 <p className="text-2xl font-semibold text-gray-900">
                   {availableTests.length}
                 </p>
+                <p className="text-xs text-gray-400 mt-1">Available now · view past</p>
               </div>
             </div>
           </div>
@@ -959,6 +983,7 @@ const StudentDashboard = () => {
                               ✓ Applied
                             </span>
                           ) : !isDriveEnded(drive) &&
+                            !isDeadlinePassed(drive) &&
                             isEligibleForDrive(drive) ? (
                             <button
                               onClick={() => handleApply(drive._id)}
@@ -974,6 +999,10 @@ const StudentDashboard = () => {
                             >
                               Not Eligible
                             </button>
+                          ) : isDeadlinePassed(drive) ? (
+                            <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded text-sm font-medium">
+                              Deadline Passed
+                            </span>
                           ) : (
                             <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded text-sm font-medium">
                               Ended

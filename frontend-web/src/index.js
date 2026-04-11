@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import axios from 'axios';
-const API_BASE = process.env.REACT_APP_API_BASE;
+import { API_BASE } from './config/api';
 
 // Set default axios configuration
 axios.defaults.baseURL = API_BASE;

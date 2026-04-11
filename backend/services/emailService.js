@@ -88,7 +88,10 @@ const sendVerificationEmail = async (email, token) => {
   await initializeTransporter();
 
   // Make sure we're using the correct frontend URL
-  const frontendUrl = process.env.CLIENT_URL || 'https://placement-app-omega.vercel.app';
+  const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+  if (!frontendUrl) {
+    throw new Error("FRONTEND_URL or CLIENT_URL must be set");
+  }
   const verificationUrl = `${frontendUrl}/verify-email?token=${token}`;
   
   console.log('=== EMAIL SERVICE DEBUG ===');

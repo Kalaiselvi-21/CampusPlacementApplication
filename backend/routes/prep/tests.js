@@ -1,4 +1,5 @@
 const multer = require('multer');
+const os = require('os');
 const { auth: authMiddleware } = require('../../middleware/auth');
 const { importQuiz } = require('../../services/quizGateway');
 const neonService = require('../../services/database/neonService');
@@ -57,7 +58,12 @@ const formatNeonTest = (row) => ({
   updatedAt: row.updated_at,
 });
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(16).slice(2)}-${file.originalname}`),
+  }),
+});
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
@@ -272,22 +278,46 @@ router.post('/:id/start', authMiddleware, async (req, res) => {
 
 router.get('/past', authMiddleware, async (req, res) => {
   try {
-    const rows = await neonService.executeRawQuery(
-      `
-      SELECT t.id, t.title, t.department, t.duration_mins
-      FROM test_assignments ta
-      JOIN tests t ON t.id = ta.test_id
-      WHERE ta.user_id = $1 AND ta.status = 'completed'
-      ORDER BY ta.updated_at DESC
-      `,
-      [req.user.id]
-    );
+    let rows;
+    if (isPRRole(req.user)) {
+      // For PRs: return tests they created that have ended
+      rows = await neonService.executeRawQuery(
+        `
+        SELECT t.id, t.title, t.department, t.duration_mins,
+               NULL::numeric AS score, NULL::numeric AS total
+        FROM tests t
+        WHERE t.created_by = $1
+          AND (
+            (t.end_at IS NOT NULL AND t.end_at < NOW())
+            OR t.status = 'closed'
+          )
+        ORDER BY COALESCE(t.end_at, t.updated_at) DESC
+        `,
+        [req.user.id]
+      );
+    } else {
+      // For students: return completed assignments with score
+      rows = await neonService.executeRawQuery(
+        `
+        SELECT t.id, t.title, t.department, t.duration_mins,
+               ts.score, ts.total
+        FROM test_assignments ta
+        JOIN tests t ON t.id = ta.test_id
+        LEFT JOIN test_submissions ts ON ts.test_id = t.id AND ts.user_id = ta.user_id
+        WHERE ta.user_id = $1 AND ta.status = 'completed'
+        ORDER BY ta.updated_at DESC
+        `,
+        [req.user.id]
+      );
+    }
     return res.json({
       tests: rows.map((t) => ({
         id: t.id,
         title: t.title,
         department: t.department,
         durationMins: t.duration_mins,
+        score: t.score ?? null,
+        total: t.total ?? null,
       })),
     });
   } catch (err) {

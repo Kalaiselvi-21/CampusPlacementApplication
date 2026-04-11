@@ -1,8 +1,8 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import axios from "axios";
-  const API_BASE = process.env.REACT_APP_API_BASE;
-
+  
 const DeletionRequestsBadge = ({ className = "" }) => {
   const { user } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);

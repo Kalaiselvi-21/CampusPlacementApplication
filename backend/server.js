@@ -3,6 +3,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
+const rateLimit = require("express-rate-limit");
 const session = require("express-session");
 const passport = require("./config/passport");
 const placementConsentRoutes = require("./routes/placementConsent");
@@ -22,9 +23,47 @@ process.env.QUIZ_LAUNCH_MODE = "expo";
 
 const app = express();
 const server = http.createServer(app);
+
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
+const normalizeOrigin = (value) => String(value || "").replace(/\/$/, "");
+const allowedOrigins = Array.from(
+  new Set(
+    [
+      process.env.CLIENT_URL,
+      process.env.FRONTEND_URL,
+      "https://placement-app-omega.vercel.app",
+      "http://localhost:3000",
+    ]
+      .filter(Boolean)
+      .map(normalizeOrigin),
+  ),
+);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  if (allowedOrigins.includes(normalizedOrigin)) {
+    return true;
+  }
+
+  return /^https:\/\/campus-placement-application(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(
+    normalizedOrigin,
+  );
+};
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "https://placement-app-omega.vercel.app",
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by Socket.IO CORS"));
+    },
     methods: ["GET", "POST"],
   },
 });
@@ -33,18 +72,14 @@ const io = new Server(server, {
 app.set("io", io);
 
 // Middleware
-// Allow frontend (3000) and secured quiz app (19006) to call the API
-const allowedOrigins = [
-  (process.env.CLIENT_URL || "https://placement-app-omega.vercel.app").replace(/\/$/, ""),
-  (process.env.EXPO_QUIZ_URL || "https://placement-app-sewb.vercel.app/").replace(/\/$/, ""),
-];
+// Allow the main frontend, local development, and Vercel previews to call the API.
+allowedOrigins.push(normalizeOrigin(process.env.EXPO_QUIZ_URL || "https://placement-app-sewb.vercel.app/"));
+allowedOrigins.push("https://campus-placement-application-r9h3hnq3v-nifo.vercel.app");
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // allow same-origin/non-browser
-      const o = origin.replace(/\/$/, "");
-      if (allowedOrigins.includes(o)) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -78,6 +113,68 @@ app.use(
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Rate limiting
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { message: "Too many attempts, please try again after 15 minutes." },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: "Too many registration attempts, please try again after 15 minutes.",
+  },
+});
+
+const resendVerificationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message:
+      "Too many verification email requests, please try again after 15 minutes.",
+  },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many upload requests, please slow down." },
+});
+
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please slow down." },
+});
+
+const postOnly =
+  (middleware) =>
+  (req, res, next) =>
+    (req.method === "POST" ? middleware(req, res, next) : next());
+
+app.use("/api/auth/login", postOnly(loginLimiter));
+app.use("/api/auth/register", postOnly(registerLimiter));
+app.use(
+  "/api/auth/resend-verification",
+  postOnly(resendVerificationLimiter),
+);
+app.use("/api/users/upload-cgpa", uploadLimiter);
+app.use("/api/profile/upload", uploadLimiter);
+app.use("/api", generalLimiter);
 
 // Test route
 app.get("/api/test", (req, res) => {

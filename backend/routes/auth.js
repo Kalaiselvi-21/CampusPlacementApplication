@@ -55,6 +55,17 @@ const toPublicUser = (user) => ({
 
 // ==================== AUTHENTICATION ROUTES ====================
 
+// Get current authenticated user
+router.get("/me", auth, async (req, res) => {
+  try {
+    const user = await neonService.findUserById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    return res.json({ user: toPublicUser(user) });
+  } catch (error) {
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
 // Register route
 router.post("/register", async (req, res) => {
   try {
@@ -230,7 +241,7 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE },
+      { expiresIn: process.env.JWT_EXPIRE || "7d" },
     );
 
     res.json({

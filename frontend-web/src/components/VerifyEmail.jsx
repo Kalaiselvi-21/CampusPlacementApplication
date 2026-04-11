@@ -1,11 +1,11 @@
+import { API_BASE } from '../config/api';
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
 
 const VerifyEmail = () => {
-  const API_BASE = process.env.REACT_APP_API_BASE;
-  const [searchParams] = useSearchParams();
+    const [searchParams] = useSearchParams();
   const { token: paramToken } = useParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState("verifying"); // verifying, success, error

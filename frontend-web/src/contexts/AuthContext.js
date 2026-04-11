@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
-const API_BASE = process.env.REACT_APP_API_BASE;
+import { API_BASE } from '../config/api';
 
 const AuthContext = createContext();
 
@@ -23,6 +23,59 @@ const normalizeUser = (user) => {
   };
 };
 
+const mergeUserState = (currentUser, incomingUser) => {
+  if (!currentUser) return normalizeUser(incomingUser);
+  if (!incomingUser) return normalizeUser(currentUser);
+
+  const currentVerification = currentUser.verificationStatus || {};
+  const incomingVerification = incomingUser.verificationStatus || {};
+  const mergedVerification = {
+    ...currentVerification,
+    ...incomingVerification,
+    otpVerified: Boolean(
+      currentVerification.otpVerified || incomingVerification.otpVerified
+    ),
+    isVerified: Boolean(
+      currentVerification.isVerified || incomingVerification.isVerified
+    ),
+  };
+
+  return normalizeUser({
+    ...currentUser,
+    ...incomingUser,
+    isVerified: Boolean(currentUser.isVerified || incomingUser.isVerified),
+    emailVerification: {
+      ...(currentUser.emailVerification || {}),
+      ...(incomingUser.emailVerification || {}),
+      emailVerified: Boolean(
+        currentUser.emailVerification?.emailVerified ||
+          incomingUser.emailVerification?.emailVerified ||
+          currentUser.isVerified ||
+          incomingUser.isVerified
+      ),
+    },
+    approvalVerification: {
+      ...(currentUser.approvalVerification || {}),
+      ...(incomingUser.approvalVerification || {}),
+      isVerified: Boolean(
+        currentUser.approvalVerification?.isVerified ||
+          incomingUser.approvalVerification?.isVerified ||
+          currentVerification.isVerified ||
+          incomingVerification.isVerified
+      ),
+    },
+    profile: {
+      ...(currentUser.profile || {}),
+      ...(incomingUser.profile || {}),
+    },
+    placementPolicyConsent: {
+      ...(currentUser.placementPolicyConsent || {}),
+      ...(incomingUser.placementPolicyConsent || {}),
+    },
+    verificationStatus: mergedVerification,
+  });
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -37,18 +90,6 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const initializeAuth = async () => {
-      const navEntry = performance.getEntriesByType('navigation')[0];
-      const isReload = navEntry?.type === 'reload' || performance.navigation?.type === 1;
-
-      // Product requirement: refreshing any authenticated page should return user to login.
-      if (isReload) {
-        localStorage.removeItem('token');
-        delete axios.defaults.headers.common['Authorization'];
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
       const token = localStorage.getItem('token');
       if (token && token !== 'null' && token !== 'undefined') {
         try {
@@ -101,7 +142,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const updateUser = (updatedUser) => {
-    setUser(normalizeUser(updatedUser));
+    setUser((currentUser) => mergeUserState(currentUser, updatedUser));
   };
 
   const checkConsentStatus = async () => {

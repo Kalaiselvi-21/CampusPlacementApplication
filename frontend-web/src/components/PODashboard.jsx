@@ -1,8 +1,10 @@
+import { API_BASE } from '../config/api';
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import toast from "react-hot-toast";
+import { downloadSignedFile } from "../services/downloadSignedFile";
 import {
   useJobDriveUpdates,
   useDeletionRequestUpdates,
@@ -11,7 +13,6 @@ import {
   useCGPAUpdates,
 } from "../hooks/useSocket";
 
-const API_BASE = process.env.REACT_APP_API_BASE;
 
 const PODashboard = () => {
   const { user, loading: authLoading } = useAuth();
@@ -255,18 +256,9 @@ const PODashboard = () => {
   };
 
   // ✅ ADDED
-  const handleDownloadFile = async (fileUrl, fileName) => {
+  const handleDownloadFile = (downloadUrl, fallbackUrl) => {
     try {
-      const response = await fetch(fileUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadSignedFile(downloadUrl, fallbackUrl);
     } catch (error) {
       console.error("Download error:", error);
       toast.error("Failed to download file");
@@ -1529,7 +1521,12 @@ const PODashboard = () => {
                                 View
                               </a>
                               <button
-                                onClick={() => handleDownloadFile(template.file_url, template.file_name)}
+                                onClick={() =>
+                                  handleDownloadFile(
+                                    template.download_url || template.file_url,
+                                    template.file_url
+                                  )
+                                }
                                 className="px-3 py-1 text-xs font-medium text-green-700 bg-green-50 rounded hover:bg-green-100 border border-green-200"
                               >
                                 Download
